@@ -8,6 +8,7 @@ import type { Workflow } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import TickerPicker from "./TickerPicker";
 import ThesisCheckDialog from "./ThesisCheckDialog";
+import SectorSweepDialog from "./SectorSweepDialog";
 
 function now(): number {
   return Date.now();
@@ -50,6 +51,7 @@ export default function TopBar() {
   const openTab = useWorkspace((s) => s.openTab);
   const appendMessage = useWorkspace((s) => s.appendMessage);
   const [thesisOpen, setThesisOpen] = useState(false);
+  const [sweepOpen, setSweepOpen] = useState(false);
 
   async function dispatch(w: Workflow, label: string, promptFn: (t: string) => string) {
     const t = selectedTicker?.trim().toUpperCase() ?? "";
@@ -61,6 +63,10 @@ export default function TopBar() {
       setThesisOpen(true);
       return;
     }
+    if (w === "sector-sweep") {
+      setSweepOpen(true);
+      return;
+    }
     openTab({ id: "md", label: "MD", pinned: true });
     appendMessage("md", {
       id: uuid(),
@@ -69,11 +75,7 @@ export default function TopBar() {
       ts: now(),
     });
     try {
-      const body =
-        w === "sector-sweep"
-          ? { workflow: w, tickers: [t] }
-          : { workflow: w, ticker: t };
-      const job = await api.createJob(body);
+      const job = await api.createJob({ workflow: w, ticker: t });
       toast.success(`${label} dispatched · job ${job.job_id.slice(0, 8)}`);
       window.dispatchEvent(
         new CustomEvent("job:dispatched", {
@@ -128,6 +130,34 @@ export default function TopBar() {
               );
             } catch (e) {
               toast.error(`Failed to dispatch thesis check: ${(e as Error).message}`);
+            }
+          }}
+        />
+      )}
+      {selectedTicker && (
+        <SectorSweepDialog
+          initial={selectedTicker}
+          open={sweepOpen}
+          onCancel={() => setSweepOpen(false)}
+          onSubmit={async (tickers) => {
+            setSweepOpen(false);
+            openTab({ id: "md", label: "MD", pinned: true });
+            appendMessage("md", {
+              id: uuid(),
+              role: "user",
+              content: `Sector sweep across ${tickers.join(", ")}.`,
+              ts: now(),
+            });
+            try {
+              const job = await api.createJob({ workflow: "sector-sweep", tickers });
+              toast.success(`Sector sweep dispatched · job ${job.job_id.slice(0, 8)}`);
+              window.dispatchEvent(
+                new CustomEvent("job:dispatched", {
+                  detail: { jobId: job.job_id, ticker: tickers[0], workflow: "sector-sweep" },
+                }),
+              );
+            } catch (e) {
+              toast.error(`Failed to dispatch sector sweep: ${(e as Error).message}`);
             }
           }}
         />
