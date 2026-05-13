@@ -1,7 +1,9 @@
+import asyncio
 import json
 from pathlib import Path
 
 from backend.agents.base import AgentResult
+from backend.observability.event_bus import JobEventBus
 from backend.observability.job_logger import JobLogger
 
 
@@ -38,3 +40,40 @@ def test_job_logger_handles_exception_log(tmp_path):
     line = json.loads((tmp_path / "_logs" / "job-err.jsonl").read_text().splitlines()[0])
     assert line["agent"] == "dcf"
     assert line["error"] == "missing peer-multiples.json"
+
+
+class _StubResult:
+    def __init__(self, cost=0.01, in_t=100, out_t=50, stop="end_turn"):
+        self.cost_usd = cost
+        self.input_tokens = in_t
+        self.output_tokens = out_t
+        self.stop_reason = stop
+
+
+async def test_log_agent_publishes_event(tmp_path: Path):
+    bus = JobEventBus()
+    q = bus.subscribe("job-1")
+    logger = JobLogger("job-1", tmp_path, event_bus=bus)
+    logger.log_agent("dcf", _StubResult())
+    event = await asyncio.wait_for(q.get(), timeout=1.0)
+    assert event["agent"] == "dcf"
+    assert event["job_id"] == "job-1"
+    assert event["cost_usd"] == 0.01
+    assert event["type"] == "agent_completed"
+
+
+async def test_log_error_publishes_event(tmp_path: Path):
+    bus = JobEventBus()
+    q = bus.subscribe("job-1")
+    logger = JobLogger("job-1", tmp_path, event_bus=bus)
+    logger.log_error("dcf", "boom")
+    event = await asyncio.wait_for(q.get(), timeout=1.0)
+    assert event["agent"] == "dcf"
+    assert event["error"] == "boom"
+    assert event["type"] == "agent_failed"
+
+
+def test_event_bus_is_optional(tmp_path: Path):
+    logger = JobLogger("job-1", tmp_path)  # no bus
+    logger.log_agent("dcf", _StubResult())  # must not raise
+    assert (tmp_path / "job-1.jsonl").exists()
