@@ -58,6 +58,8 @@ def build_files_router(research_dir: Path) -> APIRouter:
 def _walk(node: Path, base: Path) -> list[dict]:
     out = []
     for entry in sorted(node.iterdir()):
+        if entry.name.startswith("."):
+            continue
         rel = entry.relative_to(base).as_posix()
         if entry.is_dir():
             out.append({

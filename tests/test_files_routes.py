@@ -84,3 +84,24 @@ def test_get_file_404_for_missing(client):
     c, _ = client
     r = c.get("/files", params={"path": "NVDA/fundamentals/nope.md"})
     assert r.status_code == 404
+
+
+def test_get_file_rejects_symlink_escape(tmp_path: Path):
+    """A symlink inside RESEARCH_DIR pointing outside must not be readable."""
+    import os
+    sqlite = SqliteClient(tmp_path / "test.sqlite")
+    research_dir = tmp_path / "research"
+    outside_dir = tmp_path / "outside"
+    research_dir.mkdir()
+    outside_dir.mkdir()
+    (research_dir / "NVDA").mkdir()
+    secret = outside_dir / "secret.txt"
+    secret.write_text("classified")
+    # Create a symlink at NVDA/leak -> ../../outside/secret.txt
+    os.symlink(secret, research_dir / "NVDA" / "leak.txt")
+
+    app = build_app(orchestrator=MagicMock(), research_dir=research_dir,
+                    sqlite_client=sqlite, event_bus=JobEventBus())
+    with TestClient(app) as c:
+        r = c.get("/files", params={"path": "NVDA/leak.txt"})
+    assert r.status_code == 400, f"expected 400, got {r.status_code}: {r.text}"
