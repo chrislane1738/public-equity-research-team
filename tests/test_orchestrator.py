@@ -163,6 +163,26 @@ async def test_full_deep_dive_dispatches_real_agents(
     assert state["total_cost_usd"] >= 0
 
 
+async def test_orchestrator_publishes_to_event_bus(
+    tmp_path, mock_anthropic, mock_fmp, mock_edgar, mock_fred,
+    settings, fake_cik_resolver,
+):
+    """Smoke: when the orchestrator runs with an event_bus, agent events fan out."""
+    import asyncio
+    from backend.observability.event_bus import JobEventBus
+    bus = JobEventBus()
+    q = bus.subscribe("job-bus-1")
+    orch = Orchestrator(
+        anthropic_client=mock_anthropic, fmp_client=mock_fmp,
+        edgar_client=mock_edgar, fred_client=mock_fred,
+        research_dir=tmp_path, cik_resolver=fake_cik_resolver,
+        settings=settings, event_bus=bus,
+    )
+    await orch.run(workflow="morning-note", job_id="job-bus-1", ticker="NVDA")
+    event = await asyncio.wait_for(q.get(), timeout=2.0)
+    assert event["job_id"] == "job-bus-1"
+
+
 def test_extract_rating_returns_hold_for_explicit_hold():
     assert Orchestrator._extract_rating("# Synthesis\n**Rating:** Hold\n") == "Hold"
 

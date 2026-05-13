@@ -15,7 +15,7 @@ import json
 import re
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from backend.agents.comps import CompsAgent
 from backend.agents.dcf import DCFAgent
@@ -27,6 +27,7 @@ from backend.agents.deck_builder import DeckBuilderAgent
 from backend.agents.memo_builder import MemoBuilderAgent
 from backend.agents.risk import RiskAgent
 from backend.agents.technicals import TechnicalsAgent
+from backend.observability.event_bus import JobEventBus
 from backend.observability.job_logger import JobLogger
 
 
@@ -89,6 +90,7 @@ class Orchestrator:
         research_dir: Path,
         cik_resolver,
         settings,
+        event_bus: Optional[JobEventBus] = None,
     ):
         self.anthropic = anthropic_client
         self.fmp = fmp_client
@@ -97,13 +99,15 @@ class Orchestrator:
         self.research_dir = Path(research_dir)
         self.cik_resolver = cik_resolver
         self.settings = settings
+        self._event_bus = event_bus
 
     async def run_full_deep_dive(self, ticker: str, job_id: str | None = None) -> dict[str, Any]:
         ticker = ticker.upper()
         ticker_dir = self.research_dir / ticker
         ticker_dir.mkdir(parents=True, exist_ok=True)
         job_id = job_id or str(uuid.uuid4())
-        logger = JobLogger(job_id=job_id, log_dir=ticker_dir / "_logs")
+        logger = JobLogger(job_id=job_id, log_dir=ticker_dir / "_logs",
+                           event_bus=self._event_bus)
 
         state: dict[str, Any] = {"ticker": ticker, "stages": {}, "status": "running",
                                  "job_id": job_id}
@@ -230,7 +234,8 @@ class Orchestrator:
         ticker_dir = self.research_dir / ticker
         ticker_dir.mkdir(parents=True, exist_ok=True)
         job_id = job_id or str(uuid.uuid4())
-        logger = JobLogger(job_id=job_id, log_dir=ticker_dir / "_logs")
+        logger = JobLogger(job_id=job_id, log_dir=ticker_dir / "_logs",
+                           event_bus=self._event_bus)
 
         state: dict[str, Any] = {"ticker": ticker, "stages": {}, "status": "running",
                                  "job_id": job_id, "workflow": "earnings-update"}
@@ -296,7 +301,8 @@ class Orchestrator:
         ticker_dir = self.research_dir / ticker
         ticker_dir.mkdir(parents=True, exist_ok=True)
         job_id = job_id or str(uuid.uuid4())
-        logger = JobLogger(job_id=job_id, log_dir=ticker_dir / "_logs")
+        logger = JobLogger(job_id=job_id, log_dir=ticker_dir / "_logs",
+                           event_bus=self._event_bus)
 
         state: dict[str, Any] = {"ticker": ticker, "stages": {}, "status": "running",
                                  "job_id": job_id, "workflow": "morning-note"}
@@ -345,7 +351,8 @@ class Orchestrator:
         ticker_dir = self.research_dir / ticker
         ticker_dir.mkdir(parents=True, exist_ok=True)
         job_id = job_id or str(uuid.uuid4())
-        logger = JobLogger(job_id=job_id, log_dir=ticker_dir / "_logs")
+        logger = JobLogger(job_id=job_id, log_dir=ticker_dir / "_logs",
+                           event_bus=self._event_bus)
 
         state: dict[str, Any] = {"ticker": ticker, "stages": {}, "status": "running",
                                  "job_id": job_id, "workflow": "thesis-check",
@@ -477,7 +484,8 @@ class Orchestrator:
         for t in tickers:
             td = self.research_dir / t
             td.mkdir(parents=True, exist_ok=True)
-            logger = JobLogger(job_id=job_id, log_dir=td / "_logs")
+            logger = JobLogger(job_id=job_id, log_dir=td / "_logs",
+                               event_bus=self._event_bus)
 
             try:
                 cik = await self.cik_resolver.resolve(t)
