@@ -21,31 +21,35 @@ def build_app(orchestrator, research_dir: Path) -> FastAPI:
 # uvicorn entrypoint: build the app with real clients from Settings.
 # Plan B: FMP profile-based ticker→CIK lookup (replaces Plan A's _CIK_MAP).
 # ---------------------------------------------------------------------------
+import asyncio
 from backend.cik_resolver import FmpProfileCikResolver
 from backend.config import get_settings
+from backend.observability.semaphore_client import SemaphoredAnthropicClient
 from backend.orchestrator import Orchestrator
 from backend.tools.edgar_client import EdgarClient
 from backend.tools.fmp_client import FmpClient
+from backend.tools.fred_client import FredClient
 import anthropic as _anthropic_sdk
 
 
 def _build_default_app() -> FastAPI:
     settings = get_settings()
-    anthropic_client = _anthropic_sdk.AsyncAnthropic(api_key=settings.anthropic_api_key)
-    fmp_client = FmpClient(
-        api_key=settings.fmp_api_key,
-        cache_dir=settings.research_dir / "_fmp_cache",
-    )
+    raw_anthropic = _anthropic_sdk.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    semaphore = asyncio.Semaphore(settings.max_concurrent_agents)
+    anthropic_client = SemaphoredAnthropicClient(raw_anthropic, semaphore)
+
+    fmp_client = FmpClient(api_key=settings.fmp_api_key,
+                           cache_dir=settings.research_dir / "_fmp_cache")
     edgar_client = EdgarClient(user_agent=settings.sec_edgar_user_agent)
+    fred_client = FredClient(api_key=settings.fred_api_key,
+                             cache_dir=settings.research_dir / "_fred_cache")
     cik_resolver = FmpProfileCikResolver(fmp_client)
+
     orchestrator = Orchestrator(
-        anthropic_client=anthropic_client,
-        fmp_client=fmp_client,
-        edgar_client=edgar_client,
-        research_dir=settings.research_dir,
-        cik_resolver=cik_resolver,
-        opus_model=settings.anthropic_model,
-        sonnet_model="claude-sonnet-4-6",
+        anthropic_client=anthropic_client, fmp_client=fmp_client,
+        edgar_client=edgar_client, fred_client=fred_client,
+        research_dir=settings.research_dir, cik_resolver=cik_resolver,
+        settings=settings,
     )
     return build_app(orchestrator=orchestrator, research_dir=settings.research_dir)
 

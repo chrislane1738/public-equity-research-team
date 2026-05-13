@@ -1,18 +1,29 @@
-"""Orchestrator — runs the 4-stage Full Deep-Dive pipeline.
+"""Orchestrator — runs the workflow pipelines.
 
-Plan A scope: only the full-deep-dive workflow with stubbed research pods.
-Plan B will branch this for earnings-update / morning-note / thesis-check /
-sector-sweep workflows.
+Stage layout (Full Deep-Dive):
+  1. Fundamentals (sequential, blocks Stage 2).
+  2a. Industry, Comps, Macro, Risk, Technicals (parallel via asyncio.gather).
+  2b. DCF (after Comps writes peer-multiples.json).
+  3. MD synthesis.
+  4. Deck Builder + Memo Builder (parallel).
+
+All Anthropic calls are throttled by a shared asyncio.Semaphore wrapping the
+client. Per-agent model selection comes from Settings.model_for(agent_name).
 """
 import asyncio
 import re
 from pathlib import Path
 from typing import Any
 
-from backend.agents._stubs import STUB_AGENTS, run_stub
+from backend.agents.comps import CompsAgent
+from backend.agents.dcf import DCFAgent
 from backend.agents.fundamentals import FundamentalsAgent
+from backend.agents.industry import IndustryAgent
+from backend.agents.macro import MacroAgent
 from backend.agents.md import MDAgent
 from backend.agents.memo_builder import MemoBuilderAgent
+from backend.agents.risk import RiskAgent
+from backend.agents.technicals import TechnicalsAgent
 
 
 RATING_PATTERN = re.compile(r"\*\*Rating:\*\*\s*(Buy|Hold|Sell)", re.IGNORECASE)
@@ -24,18 +35,18 @@ class Orchestrator:
         anthropic_client,
         fmp_client,
         edgar_client,
+        fred_client,
         research_dir: Path,
         cik_resolver,
-        opus_model: str,
-        sonnet_model: str,
+        settings,
     ):
         self.anthropic = anthropic_client
         self.fmp = fmp_client
         self.edgar = edgar_client
+        self.fred = fred_client
         self.research_dir = Path(research_dir)
         self.cik_resolver = cik_resolver
-        self.opus_model = opus_model
-        self.sonnet_model = sonnet_model
+        self.settings = settings
 
     async def run_full_deep_dive(self, ticker: str) -> dict[str, Any]:
         ticker = ticker.upper()
@@ -44,7 +55,7 @@ class Orchestrator:
 
         state: dict[str, Any] = {"ticker": ticker, "stages": {}, "status": "running"}
 
-        # Stage 1 — Fundamentals (sequential)
+        # Stage 1 — Fundamentals
         state["current_stage"] = "fundamentals"
         try:
             cik = await self.cik_resolver.resolve(ticker)
@@ -52,38 +63,66 @@ class Orchestrator:
             state["status"] = "failed"
             state["error"] = f"CIK lookup failed for {ticker}: {exc}"
             return state
-        fund_agent = FundamentalsAgent(
+        fund = FundamentalsAgent(
             anthropic_client=self.anthropic,
-            fmp_client=self.fmp,
-            edgar_client=self.edgar,
-            model=self.opus_model,
+            fmp_client=self.fmp, edgar_client=self.edgar,
+            model=self.settings.model_for("fundamentals"),
         )
-        await fund_agent.run(ticker=ticker, cik=cik, ticker_dir=ticker_dir)
+        await fund.run(ticker=ticker, cik=cik, ticker_dir=ticker_dir)
         state["stages"]["fundamentals"] = "complete"
 
-        # Stage 2 — Stub research pods (parallel)
+        # Stage 2a — Industry, Comps, Macro, Risk, Technicals (parallel)
         state["current_stage"] = "research"
-        await asyncio.gather(
-            *(run_stub(name, ticker, ticker_dir) for name in STUB_AGENTS)
+        industry = IndustryAgent(self.anthropic, self.fmp,
+                                 model=self.settings.model_for("industry"))
+        comps = CompsAgent(self.anthropic, self.fmp,
+                           model=self.settings.model_for("comps"))
+        macro = MacroAgent(self.anthropic, self.fred,
+                           model=self.settings.model_for("macro"))
+        risk = RiskAgent(self.anthropic,
+                         model=self.settings.model_for("risk"))
+        technicals = TechnicalsAgent(self.anthropic, self.fmp,
+                                     model=self.settings.model_for("technicals"))
+        results_2a = await asyncio.gather(
+            industry.run(ticker=ticker, ticker_dir=ticker_dir),
+            comps.run(ticker=ticker, ticker_dir=ticker_dir),
+            macro.run(ticker=ticker, ticker_dir=ticker_dir, catalysts=[]),
+            risk.run(ticker=ticker, ticker_dir=ticker_dir),
+            technicals.run(ticker=ticker, ticker_dir=ticker_dir),
+            return_exceptions=True,
         )
-        for name in STUB_AGENTS:
-            state["stages"][name] = "complete"
+        for name, res in zip(["industry", "comps", "macro", "risk", "technicals"],
+                             results_2a):
+            state["stages"][name] = "failed" if isinstance(res, Exception) else "complete"
+            if isinstance(res, Exception):
+                state.setdefault("errors", {})[name] = str(res)
+
+        # Stage 2b — DCF (after Comps wrote peer-multiples.json)
+        if state["stages"].get("comps") == "complete":
+            dcf = DCFAgent(self.anthropic, self.fmp,
+                           model=self.settings.model_for("dcf"))
+            try:
+                await dcf.run(ticker=ticker, ticker_dir=ticker_dir)
+                state["stages"]["dcf"] = "complete"
+            except Exception as exc:
+                state["stages"]["dcf"] = "failed"
+                state.setdefault("errors", {})["dcf"] = str(exc)
+        else:
+            state["stages"]["dcf"] = "skipped"
 
         # Stage 3 — Synthesis
         state["current_stage"] = "synthesis"
-        md_agent = MDAgent(anthropic_client=self.anthropic, model=self.opus_model)
-        await md_agent.synthesize(ticker=ticker, ticker_dir=ticker_dir)
+        md = MDAgent(self.anthropic, model=self.settings.model_for("md"))
+        await md.synthesize(ticker=ticker, ticker_dir=ticker_dir)
         synthesis = (ticker_dir / "synthesis" / "_synthesis.md").read_text()
-        rating = self._extract_rating(synthesis)
-        state["rating"] = rating
+        state["rating"] = self._extract_rating(synthesis)
         state["stages"]["synthesis"] = "complete"
 
-        # Stage 4 — Production (Memo only in Plan A)
+        # Stage 4 — Production (Memo only — Task 19 wires Deck in parallel)
         state["current_stage"] = "production"
-        memo_agent = MemoBuilderAgent(
-            anthropic_client=self.anthropic, model=self.sonnet_model
-        )
-        await memo_agent.run(ticker=ticker, ticker_dir=ticker_dir, rating=rating)
+        memo = MemoBuilderAgent(self.anthropic,
+                                model=self.settings.model_for("memo_builder"))
+        await memo.run(ticker=ticker, ticker_dir=ticker_dir, rating=state["rating"])
         state["stages"]["memo_builder"] = "complete"
 
         state["status"] = "complete"

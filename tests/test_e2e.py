@@ -1,12 +1,8 @@
 """End-to-end integration test for the full-deep-dive pipeline.
 
-Tests the full pipeline: FmpClient + EdgarClient + FundamentalsAgent +
-stub research pods + MDAgent + MemoBuilderAgent, called through the
-FastAPI TestClient.
-
-HTTP calls (FMP + EDGAR) are mocked via respx at the AsyncClient transport
-level. The TestClient uses httpx.Client (sync) with an ASGITransport, so it
-is not affected by the AsyncClient patching.
+Tests the full pipeline through the FastAPI TestClient. HTTP calls to EDGAR
+are mocked via respx; the FMP client is a MagicMock (real agent dispatch
+makes too many FMP calls to enumerate individually in a respx router).
 """
 import json
 from pathlib import Path
@@ -21,7 +17,6 @@ from httpx import AsyncClient, MockTransport, Response
 from backend.main import build_app
 from backend.orchestrator import Orchestrator
 from backend.tools.edgar_client import EdgarClient
-from backend.tools.fmp_client import FmpClient
 
 
 class FakeAnthropicMsg:
@@ -58,20 +53,12 @@ Top risk: AI capex pullback.
 
 
 async def test_full_deep_dive_e2e_produces_memo_docx(tmp_path):
-    """Full pipeline test: HTTP mocked at AsyncClient transport level, routed through TestClient."""
+    """Full pipeline test: EDGAR HTTP mocked at AsyncClient transport level,
+    FMP mocked via MagicMock, routed through TestClient."""
     fixture_html = (Path(__file__).parent / "fixtures" / "edgar_nvda_10k.html").read_text()
 
-    # Build the respx router for external HTTP calls (FMP + EDGAR)
+    # Build the respx router for EDGAR HTTP calls only
     router = respx.MockRouter(assert_all_mocked=True, assert_all_called=False)
-    router.get("https://financialmodelingprep.com/stable/income-statement").mock(
-        return_value=Response(200, json=[{"date": "2024-01-28", "revenue": 60_922_000_000, "grossProfit": 44_301_000_000}])
-    )
-    router.get("https://financialmodelingprep.com/stable/balance-sheet-statement").mock(
-        return_value=Response(200, json=[{"date": "2024-01-28", "totalAssets": 65_728_000_000}])
-    )
-    router.get("https://financialmodelingprep.com/stable/cash-flow-statement").mock(
-        return_value=Response(200, json=[{"date": "2024-01-28", "freeCashFlow": 27_021_000_000}])
-    )
     router.get("https://data.sec.gov/submissions/CIK0001045810.json").mock(
         return_value=Response(200, json={
             "filings": {"recent": {
@@ -85,19 +72,64 @@ async def test_full_deep_dive_e2e_produces_memo_docx(tmp_path):
         "https://www.sec.gov/Archives/edgar/data/1045810/000104581024000029/nvda-20240128.htm"
     ).mock(return_value=Response(200, text=fixture_html))
 
-    # ---- Anthropic mock (3 sequential calls: Fundamentals KPIs, MD synthesis, Memo) ----
+    # ---- FMP mock — covers all agent calls ----
+    fmp = MagicMock()
+    fmp.get_financials = AsyncMock(return_value={
+        "income": [{"revenue": 60_922_000_000, "grossProfit": 44_301_000_000,
+                    "operatingIncome": 32_000_000_000, "ebitda": 35_000_000_000,
+                    "eps": 11.93}],
+        "balance": [{"totalAssets": 65_728_000_000, "totalDebt": 11_000_000_000,
+                     "cashAndCashEquivalents": 7_300_000_000}],
+        "cash": [{"freeCashFlow": 27_021_000_000}],
+    })
+    fmp.get_profile = AsyncMock(return_value={
+        "sector": "Technology", "industry": "Semiconductors",
+        "mktCap": 3_000_000_000_000, "beta": 1.6, "price": 110.0,
+    })
+    fmp.get_quote = AsyncMock(return_value={"price": 110.0,
+                                            "sharesOutstanding": 2.5e9,
+                                            "yearHigh": 1200, "yearLow": 400})
+    fmp.get_peers = AsyncMock(return_value=["AMD", "INTC"])
+    rows = [{"date": f"2026-04-{d:02d}", "close": 100 + d * 0.5,
+             "volume": 1_000_000} for d in range(1, 31)]
+    fmp.get_historical_prices = AsyncMock(return_value=rows)
+    fmp.get_10y_treasury_rate = AsyncMock(return_value=4.25)
+
+    # ---- Fred mock ----
+    fred = MagicMock()
+    fred.get_series = AsyncMock(return_value=[{"date": "2026-05-09", "value": 4.25}])
+
+    # ---- Settings mock ----
+    settings = MagicMock()
+    settings.model_for = MagicMock(side_effect=lambda agent: "claude-opus-4-7")
+
+    # ---- Anthropic mock ----
     kpi_json = json.dumps({
         "data_center_revenue": {"definition": "DC revenue", "latest_value": 47_525_000_000, "unit": "USD"},
         "gross_margin": {"definition": "GP/Revenue", "latest_value": 0.727, "unit": "ratio"},
     })
+    dcf_assumptions = json.dumps({
+        "growth_path": [0.20, 0.18, 0.15, 0.12, 0.10],
+        "ebit_margin_path": [0.55, 0.56, 0.57, 0.57, 0.58],
+        "tax_rate": 0.13, "da_pct_revenue": 0.03,
+        "capex_pct_revenue": 0.05, "wc_change_pct_revenue": 0.01,
+        "terminal_growth_pct": 3.0, "blend_weight_ggm": 0.4,
+        "weight_equity": 0.99, "weight_debt": 0.01, "cost_of_debt_pct": 4.5,
+    })
     anthropic = MagicMock()
     anthropic.messages.create = AsyncMock(side_effect=[
-        FakeAnthropicMsg(text=kpi_json),
-        FakeAnthropicMsg(text=SYNTHESIS_OUT),
-        FakeAnthropicMsg(text=MEMO_OUT),
+        FakeAnthropicMsg(text=kpi_json),                                  # Fundamentals KPI
+        FakeAnthropicMsg(text="# Industry & Moat — NVDA\nWide moat.\n"),  # Industry
+        FakeAnthropicMsg(text="# Comps — NVDA\nIn line.\n"),              # Comps
+        FakeAnthropicMsg(text="# Macro — NVDA\nGoldilocks.\n"),           # Macro
+        FakeAnthropicMsg(text="# Risk — NVDA\n**Bear-case PT: $80**\n"),  # Risk
+        FakeAnthropicMsg(text="# Technicals — NVDA\nUptrend.\n"),         # Technicals
+        FakeAnthropicMsg(text=dcf_assumptions),                            # DCF assumptions
+        FakeAnthropicMsg(text="# DCF — NVDA\nBlended PT $1,150.\n"),      # DCF section
+        FakeAnthropicMsg(text=SYNTHESIS_OUT),                              # MD synthesis
+        FakeAnthropicMsg(text=MEMO_OUT),                                   # Memo Builder
     ])
 
-    fmp = FmpClient(api_key="fake", cache_dir=tmp_path / "_fmp_cache")
     edgar = EdgarClient(user_agent="Test test@example.com")
 
     cik_resolver = MagicMock()
@@ -106,16 +138,15 @@ async def test_full_deep_dive_e2e_produces_memo_docx(tmp_path):
         anthropic_client=anthropic,
         fmp_client=fmp,
         edgar_client=edgar,
+        fred_client=fred,
         research_dir=tmp_path,
         cik_resolver=cik_resolver,
-        opus_model="claude-opus-4-7",
-        sonnet_model="claude-sonnet-4-6",
+        settings=settings,
     )
 
     app = build_app(orchestrator=orch, research_dir=tmp_path)
 
-    # Patch AsyncClient to inject the respx router's mock transport.
-    # This leaves httpx.Client (used by TestClient's ASGITransport) untouched.
+    # Patch AsyncClient to inject the respx router's mock transport for EDGAR calls.
     mock_transport = MockTransport(router.handler)
     _original_async_client_init = AsyncClient.__init__
 
@@ -146,6 +177,11 @@ async def test_full_deep_dive_e2e_produces_memo_docx(tmp_path):
     assert (ticker_dir / "fundamentals" / "financials.json").exists()
     assert (ticker_dir / "fundamentals" / "kpis.json").exists()
     assert (ticker_dir / "fundamentals" / "10k-excerpt.txt").exists()
-    for sub in ["industry", "dcf", "comps", "macro", "risk", "technicals"]:
-        assert (ticker_dir / sub / "section.md").exists()
+    assert (ticker_dir / "industry" / "section.md").exists()
+    assert (ticker_dir / "comps" / "peer-multiples.json").exists()
+    assert (ticker_dir / "comps" / "comps.xlsx").exists()
+    assert (ticker_dir / "dcf" / "dcf.xlsx").exists()
+    assert (ticker_dir / "macro" / "section.md").exists()
+    assert (ticker_dir / "risk" / "section.md").exists()
+    assert (ticker_dir / "technicals" / "section.md").exists()
     assert (ticker_dir / "synthesis" / "_synthesis.md").exists()
