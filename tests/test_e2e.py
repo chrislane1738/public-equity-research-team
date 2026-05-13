@@ -18,6 +18,7 @@ from docx import Document
 from fastapi.testclient import TestClient
 from httpx import AsyncClient, MockTransport, Response
 
+from backend.cik_resolver import FmpProfileCikResolver
 from backend.main import build_app
 from backend.orchestrator import Orchestrator
 from backend.tools.edgar_client import EdgarClient
@@ -100,12 +101,14 @@ async def test_full_deep_dive_e2e_produces_memo_docx(tmp_path):
     fmp = FmpClient(api_key="fake", cache_dir=tmp_path / "_fmp_cache")
     edgar = EdgarClient(user_agent="Test test@example.com")
 
+    cik_resolver = MagicMock()
+    cik_resolver.resolve = AsyncMock(return_value="0001045810")
     orch = Orchestrator(
         anthropic_client=anthropic,
         fmp_client=fmp,
         edgar_client=edgar,
         research_dir=tmp_path,
-        ticker_to_cik={"NVDA": "0001045810"},
+        cik_resolver=cik_resolver,
         opus_model="claude-opus-4-7",
         sonnet_model="claude-sonnet-4-6",
     )

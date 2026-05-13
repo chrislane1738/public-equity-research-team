@@ -44,15 +44,22 @@ def mock_edgar():
     return edgar
 
 
+@pytest.fixture
+def fake_cik_resolver():
+    r = MagicMock()
+    r.resolve = AsyncMock(return_value="0001045810")
+    return r
+
+
 async def test_run_full_deep_dive_produces_all_artifacts(
-    tmp_path, mock_anthropic, mock_fmp, mock_edgar
+    tmp_path, mock_anthropic, mock_fmp, mock_edgar, fake_cik_resolver
 ):
     orch = Orchestrator(
         anthropic_client=mock_anthropic,
         fmp_client=mock_fmp,
         edgar_client=mock_edgar,
         research_dir=tmp_path,
-        ticker_to_cik={"NVDA": "0001045810"},
+        cik_resolver=fake_cik_resolver,
         opus_model="claude-opus-4-7",
         sonnet_model="claude-sonnet-4-6",
     )
@@ -71,7 +78,7 @@ async def test_run_full_deep_dive_produces_all_artifacts(
 
 
 async def test_run_extracts_rating_from_synthesis(
-    tmp_path, mock_fmp, mock_edgar
+    tmp_path, mock_fmp, mock_edgar, fake_cik_resolver
 ):
     client = MagicMock()
     client.messages.create = AsyncMock(side_effect=[
@@ -85,7 +92,7 @@ async def test_run_extracts_rating_from_synthesis(
         fmp_client=mock_fmp,
         edgar_client=mock_edgar,
         research_dir=tmp_path,
-        ticker_to_cik={"NVDA": "0001045810"},
+        cik_resolver=fake_cik_resolver,
         opus_model="claude-opus-4-7",
         sonnet_model="claude-sonnet-4-6",
     )

@@ -25,7 +25,7 @@ class Orchestrator:
         fmp_client,
         edgar_client,
         research_dir: Path,
-        ticker_to_cik: dict[str, str],
+        cik_resolver,
         opus_model: str,
         sonnet_model: str,
     ):
@@ -33,7 +33,7 @@ class Orchestrator:
         self.fmp = fmp_client
         self.edgar = edgar_client
         self.research_dir = Path(research_dir)
-        self.ticker_to_cik = ticker_to_cik
+        self.cik_resolver = cik_resolver
         self.opus_model = opus_model
         self.sonnet_model = sonnet_model
 
@@ -46,10 +46,11 @@ class Orchestrator:
 
         # Stage 1 — Fundamentals (sequential)
         state["current_stage"] = "fundamentals"
-        cik = self.ticker_to_cik.get(ticker)
-        if not cik:
+        try:
+            cik = await self.cik_resolver.resolve(ticker)
+        except Exception as exc:
             state["status"] = "failed"
-            state["error"] = f"No CIK mapping for {ticker}"
+            state["error"] = f"CIK lookup failed for {ticker}: {exc}"
             return state
         fund_agent = FundamentalsAgent(
             anthropic_client=self.anthropic,

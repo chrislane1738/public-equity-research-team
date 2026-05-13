@@ -21,14 +21,12 @@ def build_app(orchestrator, research_dir: Path) -> FastAPI:
 # uvicorn entrypoint: build the app with real clients from Settings.
 # Plan A: hard-code a small CIK map. Plan B will add an FMP ticker→CIK lookup.
 # ---------------------------------------------------------------------------
+from backend.cik_resolver import FmpProfileCikResolver
 from backend.config import get_settings
 from backend.orchestrator import Orchestrator
 from backend.tools.edgar_client import EdgarClient
 from backend.tools.fmp_client import FmpClient
 import anthropic as _anthropic_sdk
-
-
-_CIK_MAP = {"NVDA": "0001045810", "AAPL": "0000320193", "MSFT": "0000789019"}
 
 
 def _build_default_app() -> FastAPI:
@@ -39,12 +37,13 @@ def _build_default_app() -> FastAPI:
         cache_dir=settings.research_dir / "_fmp_cache",
     )
     edgar_client = EdgarClient(user_agent=settings.sec_edgar_user_agent)
+    cik_resolver = FmpProfileCikResolver(fmp_client)
     orchestrator = Orchestrator(
         anthropic_client=anthropic_client,
         fmp_client=fmp_client,
         edgar_client=edgar_client,
         research_dir=settings.research_dir,
-        ticker_to_cik=_CIK_MAP,
+        cik_resolver=cik_resolver,
         opus_model=settings.anthropic_model,
         sonnet_model="claude-sonnet-4-6",
     )
