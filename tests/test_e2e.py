@@ -19,6 +19,8 @@ from backend.main import build_app
 from backend.orchestrator import Orchestrator
 from backend.tools.edgar_client import EdgarClient
 
+from .helpers import wait_for_job
+
 
 class FakeAnthropicMsg:
     def __init__(self, text: str):
@@ -181,17 +183,7 @@ async def test_full_deep_dive_e2e_produces_memo_docx(tmp_path):
             assert resp.status_code == 202, f"status={resp.status_code} body={resp.text!r}"
             job_id = resp.json()["job_id"]
 
-            # Poll until terminal.
-            import time
-            deadline = time.monotonic() + 60.0
-            body = None
-            while time.monotonic() < deadline:
-                r = client.get(f"/jobs/{job_id}")
-                if r.status_code == 200 and r.json()["status"] in ("complete", "failed"):
-                    body = r.json()
-                    break
-                time.sleep(0.1)
-            assert body is not None, "job did not finish in 60s"
+            body = wait_for_job(client, job_id, timeout=60.0)
 
     assert body["status"] == "complete", f"body={body!r}"
     assert body["rating"] == "Buy"

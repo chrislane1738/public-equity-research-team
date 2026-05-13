@@ -22,7 +22,7 @@ def build_app(
     app = FastAPI(title="Public Equity Research Team — Backend")
     bus = event_bus or JobEventBus()
     job_repo = JobRepo(sqlite_client)
-    runner = JobRunner(orchestrator, job_repo)
+    runner = JobRunner(orchestrator, job_repo, event_bus=bus)
 
     app.add_middleware(
         CORSMiddleware,

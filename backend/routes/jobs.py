@@ -1,6 +1,7 @@
 """Jobs routes — async fire-and-forget POST + WebSocket stream."""
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
-from fastapi.responses import JSONResponse
 
 from backend.db.job_repo import JobRepo
 from backend.job_runner import JobRunner
@@ -21,7 +22,7 @@ def build_router(runner: JobRunner, job_repo: JobRepo,
         if req.workflow not in SUPPORTED_WORKFLOWS:
             raise HTTPException(400, f"Unsupported workflow: {req.workflow}")
 
-        kwargs: dict = {}
+        kwargs: dict[str, Any] = {}
         if req.workflow == "sector-sweep":
             if not req.tickers:
                 raise HTTPException(400, "sector-sweep requires `tickers`")
@@ -37,11 +38,8 @@ def build_router(runner: JobRunner, job_repo: JobRepo,
             kwargs["question"] = req.question
 
         job_id = await runner.start(req.workflow, **kwargs)
-        return JSONResponse(
-            status_code=202,
-            content={"job_id": job_id, "status": "running",
-                     "workflow": req.workflow},
-        )
+        return {"job_id": job_id, "status": "running",
+                "workflow": req.workflow}
 
     @router.get("/jobs/{job_id}", response_model=JobState)
     async def get_job(job_id: str) -> JobState:
@@ -65,7 +63,7 @@ def build_router(runner: JobRunner, job_repo: JobRepo,
                 event = await q.get()
                 await ws.send_json(event)
                 # Persisted state catches up only on terminal: re-emit and exit.
-                if event.get("type") == "stage" and event.get("status") == "complete":
+                if event.get("type") == "job_terminal":
                     final = await job_repo.get(job_id)
                     if final is not None:
                         await ws.send_json({"type": "state",
@@ -75,5 +73,10 @@ def build_router(runner: JobRunner, job_repo: JobRepo,
             pass
         finally:
             event_bus.unsubscribe(job_id, q)
+            try:
+                await ws.close()
+            except RuntimeError:
+                # Already closed (e.g. client disconnected first).
+                pass
 
     return router

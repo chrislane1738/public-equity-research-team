@@ -9,18 +9,21 @@ import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
 
 from backend.db.job_repo import JobRepo
 from backend.models.job import JobState
+from backend.observability.event_bus import JobEventBus
 
 logger = logging.getLogger(__name__)
 
 
 class JobRunner:
-    def __init__(self, orchestrator, job_repo: JobRepo) -> None:
+    def __init__(self, orchestrator, job_repo: JobRepo,
+                 event_bus: Optional[JobEventBus] = None) -> None:
         self._orch = orchestrator
         self._repo = job_repo
+        self._bus = event_bus
         self._tasks: dict[str, asyncio.Task] = {}
 
     async def start(self, workflow: str, **kwargs: Any) -> str:
@@ -46,21 +49,34 @@ class JobRunner:
         try:
             result = await self._orch.run(workflow=workflow, job_id=job_id,
                                           **kwargs)
+            final_status = result.get("status", "complete")
             await self._repo.update(
                 job_id=job_id,
-                status=result.get("status", "complete"),
+                status=final_status,
                 current_stage=result.get("current_stage"),
                 stages=result.get("stages", {}),
                 rating=result.get("rating"),
                 error=result.get("error"),
                 completed_at=datetime.now(timezone.utc),
             )
+            if self._bus is not None:
+                await self._bus.publish(job_id, {
+                    "type": "job_terminal",
+                    "job_id": job_id,
+                    "status": final_status,
+                })
         except Exception as exc:  # broad: any orchestrator failure → failed job
             logger.exception("Job %s crashed", job_id)
             await self._repo.update(
                 job_id=job_id, status="failed", error=str(exc),
                 completed_at=datetime.now(timezone.utc),
             )
+            if self._bus is not None:
+                await self._bus.publish(job_id, {
+                    "type": "job_terminal",
+                    "job_id": job_id,
+                    "status": "failed",
+                })
         finally:
             self._tasks.pop(job_id, None)
 
