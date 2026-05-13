@@ -51,9 +51,12 @@ def _build_default_app() -> FastAPI:
     return build_app(orchestrator=orchestrator, research_dir=settings.research_dir)
 
 
-# uvicorn loads `app` at module import. We only construct it if env vars are
-# present so that `pytest` can `from backend.main import build_app` without
-# needing ANTHROPIC_API_KEY/FMP_API_KEY set in the shell.
+# uvicorn loads `app` at module import. Load .env first so the guard sees the
+# keys; then only construct `app` if both required keys resolved, so pytest can
+# still `from backend.main import build_app` without env vars set.
 import os as _os
+from dotenv import load_dotenv as _load_dotenv
+
+_load_dotenv()
 if _os.environ.get("ANTHROPIC_API_KEY") and _os.environ.get("FMP_API_KEY"):
     app = _build_default_app()
