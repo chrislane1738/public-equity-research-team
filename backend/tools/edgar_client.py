@@ -3,6 +3,7 @@
 Extracts only Item 1 (Business), Item 1A (Risk Factors), and Item 7 (MD&A).
 """
 import re
+import warnings
 from typing import Optional
 
 import httpx
@@ -51,7 +52,9 @@ class EdgarClient:
 
     @staticmethod
     def _extract_sections(html: str) -> str:
-        soup = BeautifulSoup(html, "lxml")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            soup = BeautifulSoup(html, "lxml")
         text = soup.get_text("\n")
         kept_chunks: list[str] = []
         for start_marker, end_marker in KEEP_ITEMS:

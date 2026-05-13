@@ -3,7 +3,6 @@
 Plan A: single LLM call returns the full memo markdown. The deterministic side
 parses ## headings → docx sections via docx_writer.
 """
-import re
 from pathlib import Path
 
 from backend.agents.base import Agent, AgentResult
