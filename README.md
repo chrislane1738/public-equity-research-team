@@ -100,3 +100,6 @@ Plan D (not yet implemented) will add `equity-research-{setup,backend,frontend}`
 - Equity only (no fixed income, FX, options).
 - Manual quality eval (no automated scoring).
 - PDF preview pulls the pdfjs worker from cdnjs — no offline-only mode yet.
+- **No direct chat input.** Workflows are dispatched via the top-bar quick-action buttons only. The chat panel is read-only (streams agent events). Spec §7 calls for per-agent direct follow-ups; that's planned but not in v1.
+- **Single concurrent job.** `MdProgress` and `jobLog` track one active job; running a second job before the first completes will cross-contaminate the progress UI. Workaround: wait for the toast before dispatching another.
+- **`@app.on_event` deprecation warnings** in pytest output — pre-existing from Plan A; will migrate to `lifespan` in Plan D.
