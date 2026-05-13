@@ -19,7 +19,7 @@ def build_app(orchestrator, research_dir: Path) -> FastAPI:
 
 # ---------------------------------------------------------------------------
 # uvicorn entrypoint: build the app with real clients from Settings.
-# Plan A: hard-code a small CIK map. Plan B will add an FMP ticker→CIK lookup.
+# Plan B: FMP profile-based ticker→CIK lookup (replaces Plan A's _CIK_MAP).
 # ---------------------------------------------------------------------------
 from backend.cik_resolver import FmpProfileCikResolver
 from backend.config import get_settings

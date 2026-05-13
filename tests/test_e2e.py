@@ -18,7 +18,6 @@ from docx import Document
 from fastapi.testclient import TestClient
 from httpx import AsyncClient, MockTransport, Response
 
-from backend.cik_resolver import FmpProfileCikResolver
 from backend.main import build_app
 from backend.orchestrator import Orchestrator
 from backend.tools.edgar_client import EdgarClient
