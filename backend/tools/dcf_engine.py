@@ -150,7 +150,13 @@ def sensitivity_grid_exit(
     net_debt: float,
     shares: float,
 ) -> dict[tuple[float, float], float]:
-    """Return implied price per share at each (WACC, exit multiple) combination."""
+    """Return implied price per share at each (WACC, exit multiple) combination.
+
+    `multiple_axis` values are applied directly to EBITDA_T as-is — NO haircut
+    or sector cap is applied here. Callers should pre-haircut their multiples
+    (e.g. via `terminal_exit_multiple`) before passing them in if a scenario
+    grid relative to a peer median is desired.
+    """
     out: dict[tuple[float, float], float] = {}
     for w in wacc_axis:
         for m in multiple_axis:

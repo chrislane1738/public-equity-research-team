@@ -140,3 +140,22 @@ def test_sensitivity_grid_exit_returns_2d_dict():
     ev = 500 + pv_tv
     expected_price = (ev - 0) / 10
     assert math.isclose(grid[(10.0, 20.0)], expected_price, rel_tol=1e-6)
+
+
+def test_terminal_ggm_raises_when_wacc_not_above_growth():
+    # WACC 9%, g 10% (after cap with no rf, g=min(10, 3)=3 — actually NOT triggered).
+    # Need to bypass the cap: pass a growth value at or below the cap that still
+    # exceeds wacc. With wacc=2 and growth=2.5 (capped to 2.5 since rf is None
+    # and DEFAULT cap is 3), wacc still <= g.
+    with pytest.raises(ValueError, match="WACC.*must exceed"):
+        terminal_ggm(fcf_t=100, growth=2.5, wacc=2.0)
+
+
+def test_equity_value_returns_nan_price_when_shares_zero_or_negative():
+    out_zero = equity_value(ev=1000, net_debt=0, shares=0)
+    assert math.isnan(out_zero["implied_price"])
+    assert out_zero["equity_value"] == 1000
+
+    out_neg = equity_value(ev=1000, net_debt=0, shares=-5)
+    assert math.isnan(out_neg["implied_price"])
+    assert out_neg["equity_value"] == 1000
