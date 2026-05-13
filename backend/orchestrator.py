@@ -180,8 +180,70 @@ class Orchestrator:
             return await self.run_sector_sweep(**kwargs)
         raise ValueError(f"unknown workflow: {workflow}")
 
-    async def run_earnings_update(self, ticker: str, job_id: str | None = None) -> dict[str, Any]:
-        raise NotImplementedError("Task 23")
+    async def run_earnings_update(self, ticker: str,
+                                  job_id: str | None = None) -> dict[str, Any]:
+        ticker = ticker.upper()
+        ticker_dir = self.research_dir / ticker
+        ticker_dir.mkdir(parents=True, exist_ok=True)
+        job_id = job_id or str(uuid.uuid4())
+        logger = JobLogger(job_id=job_id, log_dir=ticker_dir / "_logs")
+
+        state: dict[str, Any] = {"ticker": ticker, "stages": {}, "status": "running",
+                                 "job_id": job_id, "workflow": "earnings-update"}
+
+        try:
+            cik = await self.cik_resolver.resolve(ticker)
+        except Exception as exc:
+            state["status"] = "failed"
+            state["error"] = f"CIK lookup failed: {exc}"
+            return state
+
+        # Fundamentals delta — re-pulls financials + writes section.md
+        fund = FundamentalsAgent(self.anthropic, self.fmp, self.edgar,
+                                 model=self.settings.model_for("fundamentals"))
+        fr = await fund.run(ticker=ticker, cik=cik, ticker_dir=ticker_dir)
+        logger.log_agent("fundamentals", fr)
+        state["stages"]["fundamentals"] = "complete"
+
+        # Re-run DCF and Risk in parallel (DCF still depends on existing
+        # comps/peer-multiples.json from a prior full-deep-dive)
+        dcf = DCFAgent(self.anthropic, self.fmp,
+                       model=self.settings.model_for("dcf"))
+        risk = RiskAgent(self.anthropic, model=self.settings.model_for("risk"))
+        results = await asyncio.gather(
+            dcf.run(ticker=ticker, ticker_dir=ticker_dir),
+            risk.run(ticker=ticker, ticker_dir=ticker_dir),
+            return_exceptions=True,
+        )
+        for name, res in zip(["dcf", "risk"], results):
+            if isinstance(res, Exception):
+                state["stages"][name] = "failed"
+                state.setdefault("errors", {})[name] = str(res)
+                logger.log_error(name, str(res))
+            else:
+                state["stages"][name] = "complete"
+                logger.log_agent(name, res)
+
+        # MD synthesis (consumes whichever sections happen to exist on disk)
+        md = MDAgent(self.anthropic, model=self.settings.model_for("md"))
+        md_res = await md.synthesize(ticker=ticker, ticker_dir=ticker_dir)
+        logger.log_agent("md", md_res)
+        synthesis = (ticker_dir / "synthesis" / "_synthesis.md").read_text()
+        state["rating"] = self._extract_rating(synthesis)
+        state["stages"]["synthesis"] = "complete"
+
+        # Memo only — no deck per spec
+        memo = MemoBuilderAgent(self.anthropic,
+                                model=self.settings.model_for("memo_builder"))
+        memo_res = await memo.run(ticker=ticker, ticker_dir=ticker_dir,
+                                  rating=state["rating"])
+        logger.log_agent("memo_builder", memo_res)
+        state["stages"]["memo_builder"] = "complete"
+
+        state["status"] = "complete"
+        state["current_stage"] = None
+        state["total_cost_usd"] = logger.total_cost_usd()
+        return state
 
     async def run_morning_note(self, ticker: str, job_id: str | None = None) -> dict[str, Any]:
         raise NotImplementedError("Task 24")
