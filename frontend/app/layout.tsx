@@ -29,7 +29,13 @@ export default function RootLayout({
       lang="en"
       className={`dark ${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-background text-foreground">
+      {/* suppressHydrationWarning: Grammarly and other extensions inject
+          attributes (data-new-gr-c-s-check-loaded, data-gr-ext-installed)
+          onto <body> after load, causing a benign hydration mismatch. */}
+      <body
+        className="min-h-full flex flex-col bg-background text-foreground"
+        suppressHydrationWarning
+      >
         <TooltipProvider delay={150}>{children}</TooltipProvider>
         <Toaster richColors position="bottom-right" theme="dark" />
       </body>
