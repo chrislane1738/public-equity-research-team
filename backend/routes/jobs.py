@@ -41,6 +41,11 @@ def build_router(runner: JobRunner, job_repo: JobRepo,
         return {"job_id": job_id, "status": "running",
                 "workflow": req.workflow}
 
+    @router.get("/jobs")
+    async def list_jobs(limit: int = 20):
+        items = await job_repo.list_recent(limit=limit)
+        return {"jobs": [j.model_dump(mode="json") for j in items]}
+
     @router.get("/jobs/{job_id}", response_model=JobState)
     async def get_job(job_id: str) -> JobState:
         out = await job_repo.get(job_id)

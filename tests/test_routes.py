@@ -99,3 +99,31 @@ def test_ws_stream_rejects_unknown_job(app_ctx):
     with pytest.raises(WebSocketDisconnect):
         with app_ctx.websocket_connect("/jobs/no-such-id/stream") as ws:
             ws.receive_json()
+
+
+def test_get_jobs_index_returns_recent(app_ctx):
+    job_ids = []
+    for ticker in ["NVDA", "AAPL", "MSFT"]:
+        r = app_ctx.post("/jobs", json={"ticker": ticker, "workflow": "morning-note"})
+        job_ids.append(r.json()["job_id"])
+    for jid in job_ids:
+        wait_for_job(app_ctx, jid, timeout=2.0)
+    r = app_ctx.get("/jobs")
+    assert r.status_code == 200
+    body = r.json()
+    assert "jobs" in body
+    tickers_seen = [j["ticker"] for j in body["jobs"]]
+    for t in ["NVDA", "AAPL", "MSFT"]:
+        assert t in tickers_seen
+
+
+def test_get_jobs_index_respects_limit(app_ctx):
+    job_ids = []
+    for ticker in ["A", "B", "C", "D", "E"]:
+        r = app_ctx.post("/jobs", json={"ticker": ticker, "workflow": "morning-note"})
+        job_ids.append(r.json()["job_id"])
+    for jid in job_ids:
+        wait_for_job(app_ctx, jid, timeout=2.0)
+    r = app_ctx.get("/jobs", params={"limit": 2})
+    assert r.status_code == 200
+    assert len(r.json()["jobs"]) == 2
