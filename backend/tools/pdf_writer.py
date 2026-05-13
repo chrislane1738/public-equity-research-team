@@ -46,7 +46,7 @@ def write_one_pager(
     table_data = [["Method", "Implied price", "Weight"]]
     for label, price, weight in triangulation_rows:
         table_data.append([label, f"${price:.0f}", f"{weight*100:.0f}%"])
-    tbl = Table(table_data, colWidths=[2.5 * inch, 1.5 * inch, 1.5 * inch])
+    tbl = Table(table_data, colWidths=[3.5 * inch, 2.0 * inch, 2.0 * inch])
     tbl.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
