@@ -13,7 +13,7 @@ FIXTURE = json.loads(
     (Path(__file__).parent / "fixtures" / "fmp_nvda_financials.json").read_text()
 )
 
-FMP_BASE = "https://financialmodelingprep.com/api/v3"
+FMP_BASE = "https://financialmodelingprep.com/stable"
 
 
 @pytest.fixture
@@ -23,13 +23,13 @@ def client(tmp_path):
 
 @respx.mock(using="httpx")
 async def test_get_financials_fetches_three_statements(client, respx_mock):
-    respx_mock.get(f"{FMP_BASE}/income-statement/NVDA").mock(
+    respx_mock.get(f"{FMP_BASE}/income-statement").mock(
         return_value=Response(200, json=FIXTURE["income"])
     )
-    respx_mock.get(f"{FMP_BASE}/balance-sheet-statement/NVDA").mock(
+    respx_mock.get(f"{FMP_BASE}/balance-sheet-statement").mock(
         return_value=Response(200, json=FIXTURE["balance"])
     )
-    respx_mock.get(f"{FMP_BASE}/cash-flow-statement/NVDA").mock(
+    respx_mock.get(f"{FMP_BASE}/cash-flow-statement").mock(
         return_value=Response(200, json=FIXTURE["cash"])
     )
 
@@ -42,13 +42,13 @@ async def test_get_financials_fetches_three_statements(client, respx_mock):
 
 @respx.mock(using="httpx")
 async def test_get_financials_uses_cache_on_second_call(client, respx_mock):
-    route = respx_mock.get(f"{FMP_BASE}/income-statement/NVDA").mock(
+    route = respx_mock.get(f"{FMP_BASE}/income-statement").mock(
         return_value=Response(200, json=FIXTURE["income"])
     )
-    respx_mock.get(f"{FMP_BASE}/balance-sheet-statement/NVDA").mock(
+    respx_mock.get(f"{FMP_BASE}/balance-sheet-statement").mock(
         return_value=Response(200, json=FIXTURE["balance"])
     )
-    respx_mock.get(f"{FMP_BASE}/cash-flow-statement/NVDA").mock(
+    respx_mock.get(f"{FMP_BASE}/cash-flow-statement").mock(
         return_value=Response(200, json=FIXTURE["cash"])
     )
 
@@ -61,7 +61,7 @@ async def test_get_financials_uses_cache_on_second_call(client, respx_mock):
 
 @respx.mock(using="httpx")
 async def test_get_financials_raises_on_http_error(client, respx_mock):
-    respx_mock.get(f"{FMP_BASE}/income-statement/NVDA").mock(
+    respx_mock.get(f"{FMP_BASE}/income-statement").mock(
         return_value=Response(429, json={"error": "rate limited"})
     )
 

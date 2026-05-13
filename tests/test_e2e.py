@@ -63,13 +63,13 @@ async def test_full_deep_dive_e2e_produces_memo_docx(tmp_path):
 
     # Build the respx router for external HTTP calls (FMP + EDGAR)
     router = respx.MockRouter(assert_all_mocked=True, assert_all_called=False)
-    router.get("https://financialmodelingprep.com/api/v3/income-statement/NVDA").mock(
+    router.get("https://financialmodelingprep.com/stable/income-statement").mock(
         return_value=Response(200, json=[{"date": "2024-01-28", "revenue": 60_922_000_000, "grossProfit": 44_301_000_000}])
     )
-    router.get("https://financialmodelingprep.com/api/v3/balance-sheet-statement/NVDA").mock(
+    router.get("https://financialmodelingprep.com/stable/balance-sheet-statement").mock(
         return_value=Response(200, json=[{"date": "2024-01-28", "totalAssets": 65_728_000_000}])
     )
-    router.get("https://financialmodelingprep.com/api/v3/cash-flow-statement/NVDA").mock(
+    router.get("https://financialmodelingprep.com/stable/cash-flow-statement").mock(
         return_value=Response(200, json=[{"date": "2024-01-28", "freeCashFlow": 27_021_000_000}])
     )
     router.get("https://data.sec.gov/submissions/CIK0001045810.json").mock(
