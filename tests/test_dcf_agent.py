@@ -80,6 +80,10 @@ async def test_dcf_writes_xlsx_and_charts_and_section(tmp_path, mock_anthropic,
     assert (td / "dcf" / "section.md").exists()
     assert "DCF" in (td / "dcf" / "section.md").read_text()
     assert result.input_tokens > 0
+    assert mock_anthropic.messages.create.call_count == 2
+    # Combined tokens across both LLM calls (assumptions + prose).
+    assert result.input_tokens == 400  # 200 + 200 from the two FakeMsg fixtures
+    assert result.output_tokens == 800  # 400 + 400
 
 
 async def test_dcf_uses_peer_median_for_exit_multiple(tmp_path, mock_anthropic,

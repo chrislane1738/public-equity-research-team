@@ -15,7 +15,7 @@ from pathlib import Path
 
 from backend.agents.base import Agent, AgentResult
 from backend.tools.charts import football_field, sensitivity_heatmap
-from backend.tools.dcf_engine import (blend_terminal, compute_wacc,
+from backend.tools.dcf_engine import (EXIT_MULT_HAIRCUT, blend_terminal, compute_wacc,
                                        discount_to_pv, equity_value, project_fcf,
                                        sensitivity_grid_exit, sensitivity_grid_ggm,
                                        terminal_exit_multiple, terminal_ggm)
@@ -126,16 +126,18 @@ class DCFAgent:
         ggm_tv = terminal_ggm(fcf_t=fcf_t,
                               growth=assumptions["terminal_growth_pct"],
                               wacc=wacc, rf=rf)
-        applied_multiple = peer_med_multiple * 0.85
+        applied_multiple = peer_med_multiple * EXIT_MULT_HAIRCUT
         if peer_p75 is not None:
             applied_multiple = min(applied_multiple, peer_p75)
         exit_tv = terminal_exit_multiple(ebitda_t=ebitda_t,
                                          peer_median_multiple=peer_med_multiple,
                                          sector_p75_cap=peer_p75)
-        explicit_pv = sum(r["fcf"] / ((1 + wacc / 100.0) ** (i + 1))
-                          for i, r in enumerate(fcf_rows))
-        ggm_pv_tv = ggm_tv / ((1 + wacc / 100.0) ** len(fcf_rows))
-        exit_pv_tv = exit_tv / ((1 + wacc / 100.0) ** len(fcf_rows))
+        cashflows = [r["fcf"] for r in fcf_rows]
+        ggm_disc = discount_to_pv(cashflows, ggm_tv, wacc)
+        exit_disc = discount_to_pv(cashflows, exit_tv, wacc)
+        explicit_pv = ggm_disc["pv_explicit"]
+        ggm_pv_tv = ggm_disc["pv_terminal"]
+        exit_pv_tv = exit_disc["pv_terminal"]
 
         ggm_eq = equity_value(ev=explicit_pv + ggm_pv_tv, net_debt=net_debt, shares=shares)
         exit_eq = equity_value(ev=explicit_pv + exit_pv_tv, net_debt=net_debt, shares=shares)
@@ -143,13 +145,15 @@ class DCFAgent:
                                        exit_mult=exit_eq["implied_price"],
                                        weight_ggm=assumptions["blend_weight_ggm"])
 
+        low_wacc = max(wacc - 1.5, 0.5)  # floor at 50bps so discount factor stays sensible
+        wacc_axis = [low_wacc, wacc, wacc + 1.5]
         sens_ggm = sensitivity_grid_ggm(
-            wacc_axis=[wacc - 1.5, wacc, wacc + 1.5],
+            wacc_axis=wacc_axis,
             growth_axis=[1.5, 2.0, 2.5, 3.0, 3.5],
             fcf_t=fcf_t,
         )
         sens_exit = sensitivity_grid_exit(
-            wacc_axis=[wacc - 1.5, wacc, wacc + 1.5],
+            wacc_axis=wacc_axis,
             multiple_axis=[applied_multiple - 3, applied_multiple, applied_multiple + 3],
             ebitda_t=ebitda_t, explicit_pv=explicit_pv,
             years_to_terminal=len(fcf_rows), net_debt=net_debt, shares=shares,
@@ -180,7 +184,7 @@ class DCFAgent:
                  "equity": ggm_eq["equity_value"],
                  "implied_price": ggm_eq["implied_price"]},
             exit_mult={"peer_median_multiple": peer_med_multiple,
-                       "haircut": 0.85, "applied_multiple": applied_multiple,
+                       "haircut": EXIT_MULT_HAIRCUT, "applied_multiple": applied_multiple,
                        "ebitda_t": ebitda_t, "tv": exit_tv,
                        "pv_tv": exit_pv_tv,
                        "ev": explicit_pv + exit_pv_tv,
@@ -233,4 +237,12 @@ class DCFAgent:
                           max_tokens=4096)
         result = await prose_llm.run(prompt=prose_prompt)
         (out_dir / "section.md").write_text(result.content)
-        return result
+
+        return AgentResult(
+            content=result.content,
+            tool_calls=result.tool_calls,
+            input_tokens=a_result.input_tokens + result.input_tokens,
+            output_tokens=a_result.output_tokens + result.output_tokens,
+            cost_usd=a_result.cost_usd + result.cost_usd,
+            stop_reason=result.stop_reason,
+        )
