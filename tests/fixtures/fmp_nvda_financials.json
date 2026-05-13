@@ -1,0 +1,11 @@
+{
+  "income": [
+    {"date": "2024-01-28", "symbol": "NVDA", "revenue": 60922000000, "grossProfit": 44301000000, "operatingIncome": 32972000000, "netIncome": 29760000000, "eps": 11.93}
+  ],
+  "balance": [
+    {"date": "2024-01-28", "symbol": "NVDA", "totalAssets": 65728000000, "totalLiabilities": 22750000000, "totalStockholdersEquity": 42978000000, "cashAndCashEquivalents": 7280000000, "totalDebt": 11000000000}
+  ],
+  "cash": [
+    {"date": "2024-01-28", "symbol": "NVDA", "operatingCashFlow": 28090000000, "capitalExpenditure": -1069000000, "freeCashFlow": 27021000000}
+  ]
+}
