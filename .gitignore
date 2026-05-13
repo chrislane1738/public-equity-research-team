@@ -1,0 +1,35 @@
+# env / secrets
+.env
+.env.local
+
+# brainstorming workspace
+.superpowers/
+
+# python
+backend/venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# node / next
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.turbo/
+
+# local data
+*.sqlite
+*.sqlite-journal
+backend/db/*.sqlite
+
+# OS
+.DS_Store
+Thumbs.db
+
+# editor
+.vscode/
+.idea/
+*.swp
