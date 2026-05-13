@@ -6,7 +6,7 @@ computing percentiles.
 """
 import math
 from statistics import median
-from typing import Iterable
+from collections.abc import Iterable
 
 
 def enterprise_value(market_cap: float, total_debt: float, cash: float) -> float:
@@ -14,7 +14,7 @@ def enterprise_value(market_cap: float, total_debt: float, cash: float) -> float
 
 
 def _safe_div(num: float, denom: float) -> float:
-    if denom is None or denom <= 0 or math.isnan(num) or math.isnan(denom):
+    if denom <= 0 or math.isnan(num) or math.isnan(denom):
         return float("nan")
     return num / denom
 
