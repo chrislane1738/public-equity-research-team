@@ -12,6 +12,7 @@ client. Per-agent model selection comes from Settings.model_for(agent_name).
 """
 import asyncio
 import re
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,7 @@ from backend.agents.deck_builder import DeckBuilderAgent
 from backend.agents.memo_builder import MemoBuilderAgent
 from backend.agents.risk import RiskAgent
 from backend.agents.technicals import TechnicalsAgent
+from backend.observability.job_logger import JobLogger
 
 
 RATING_PATTERN = re.compile(r"\*\*Rating:\*\*\s*(Buy|Hold|Sell)", re.IGNORECASE)
@@ -52,12 +54,15 @@ class Orchestrator:
         self.cik_resolver = cik_resolver
         self.settings = settings
 
-    async def run_full_deep_dive(self, ticker: str) -> dict[str, Any]:
+    async def run_full_deep_dive(self, ticker: str, job_id: str | None = None) -> dict[str, Any]:
         ticker = ticker.upper()
         ticker_dir = self.research_dir / ticker
         ticker_dir.mkdir(parents=True, exist_ok=True)
+        job_id = job_id or str(uuid.uuid4())
+        logger = JobLogger(job_id=job_id, log_dir=ticker_dir / "_logs")
 
-        state: dict[str, Any] = {"ticker": ticker, "stages": {}, "status": "running"}
+        state: dict[str, Any] = {"ticker": ticker, "stages": {}, "status": "running",
+                                 "job_id": job_id}
 
         # Stage 1 — Fundamentals
         state["current_stage"] = "fundamentals"
@@ -72,7 +77,8 @@ class Orchestrator:
             fmp_client=self.fmp, edgar_client=self.edgar,
             model=self.settings.model_for("fundamentals"),
         )
-        await fund.run(ticker=ticker, cik=cik, ticker_dir=ticker_dir)
+        fund_result = await fund.run(ticker=ticker, cik=cik, ticker_dir=ticker_dir)
+        logger.log_agent("fundamentals", fund_result)
         state["stages"]["fundamentals"] = "complete"
 
         # Stage 2a — Industry, Comps, Macro, Risk, Technicals (parallel)
@@ -97,27 +103,34 @@ class Orchestrator:
         )
         for name, res in zip(["industry", "comps", "macro", "risk", "technicals"],
                              results_2a):
-            state["stages"][name] = "failed" if isinstance(res, Exception) else "complete"
             if isinstance(res, Exception):
+                state["stages"][name] = "failed"
                 state.setdefault("errors", {})[name] = str(res)
+                logger.log_error(name, str(res))
+            else:
+                state["stages"][name] = "complete"
+                logger.log_agent(name, res)
 
         # Stage 2b — DCF (after Comps wrote peer-multiples.json)
         if state["stages"].get("comps") == "complete":
             dcf = DCFAgent(self.anthropic, self.fmp,
                            model=self.settings.model_for("dcf"))
             try:
-                await dcf.run(ticker=ticker, ticker_dir=ticker_dir)
+                dcf_result = await dcf.run(ticker=ticker, ticker_dir=ticker_dir)
                 state["stages"]["dcf"] = "complete"
+                logger.log_agent("dcf", dcf_result)
             except Exception as exc:
                 state["stages"]["dcf"] = "failed"
                 state.setdefault("errors", {})["dcf"] = str(exc)
+                logger.log_error("dcf", str(exc))
         else:
             state["stages"]["dcf"] = "skipped"
 
         # Stage 3 — Synthesis
         state["current_stage"] = "synthesis"
         md = MDAgent(self.anthropic, model=self.settings.model_for("md"))
-        await md.synthesize(ticker=ticker, ticker_dir=ticker_dir)
+        md_result = await md.synthesize(ticker=ticker, ticker_dir=ticker_dir)
+        logger.log_agent("md", md_result)
         synthesis = (ticker_dir / "synthesis" / "_synthesis.md").read_text()
         state["rating"] = self._extract_rating(synthesis)
         state["stages"]["synthesis"] = "complete"
@@ -141,10 +154,15 @@ class Orchestrator:
             return_exceptions=True,
         )
         for name, res in zip(["memo_builder", "deck_builder"], prod_results):
-            state["stages"][name] = "failed" if isinstance(res, Exception) else "complete"
             if isinstance(res, Exception):
+                state["stages"][name] = "failed"
                 state.setdefault("errors", {})[name] = str(res)
+                logger.log_error(name, str(res))
+            else:
+                state["stages"][name] = "complete"
+                logger.log_agent(name, res)
 
+        state["total_cost_usd"] = logger.total_cost_usd()
         state["status"] = "complete"
         state["current_stage"] = None
         return state

@@ -155,6 +155,13 @@ async def test_full_deep_dive_dispatches_real_agents(
     assert (td / "reports" / "onepager.pdf").exists()
     assert state["stages"]["deck_builder"] == "complete"
 
+    log_files = list((td / "_logs").glob("*.jsonl"))
+    assert len(log_files) == 1
+    lines = log_files[0].read_text().strip().splitlines()
+    # 1 fundamentals + 5 stage 2a + 1 dcf + 1 md + 2 stage 4 = 10 entries
+    assert len(lines) == 10
+    assert state["total_cost_usd"] >= 0
+
 
 def test_extract_rating_returns_hold_for_explicit_hold():
     assert Orchestrator._extract_rating("# Synthesis\n**Rating:** Hold\n") == "Hold"
