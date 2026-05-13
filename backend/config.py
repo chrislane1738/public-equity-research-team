@@ -1,8 +1,12 @@
 """Application settings loaded from environment variables."""
+from functools import lru_cache
 from pathlib import Path
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+_REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
 class Settings(BaseSettings):
@@ -12,9 +16,13 @@ class Settings(BaseSettings):
     fmp_api_key: str
     sec_edgar_user_agent: str
 
-    research_dir: Path = Path.home() / "Documents" / "equity-research"
+    research_dir: Path = Field(
+        default_factory=lambda: Path.home() / "Documents" / "equity-research"
+    )
     anthropic_model: str = "claude-opus-4-7"
-    sqlite_path: Path = Path("./backend/db/research.sqlite")
+    sqlite_path: Path = Field(
+        default_factory=lambda: _REPO_ROOT / "backend" / "db" / "research.sqlite"
+    )
 
     port_backend: int = 8000
     port_frontend: int = 3000
@@ -30,5 +38,6 @@ class Settings(BaseSettings):
         return self.research_dir / ticker.upper()
 
 
+@lru_cache
 def get_settings() -> Settings:
     return Settings()
