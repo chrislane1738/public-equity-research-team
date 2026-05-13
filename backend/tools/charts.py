@@ -28,7 +28,7 @@ def peer_share_chart(peers: list[dict], path: Path, title: str = "Peer share") -
 def box_plot(metric_name: str, peer_values: list[float],
              target_value: float | None, path: Path) -> None:
     fig, ax = plt.subplots(figsize=(6, 4))
-    ax.boxplot(peer_values, vert=True, showmeans=True, labels=[metric_name])
+    ax.boxplot(peer_values, vert=True, showmeans=True, tick_labels=[metric_name])
     if target_value is not None:
         ax.axhline(target_value, linestyle="--", color="red",
                    label=f"target = {target_value:.1f}")
@@ -100,10 +100,16 @@ def catalyst_timeline(events: list[tuple[str, str]], path: Path) -> None:
 
 def price_chart(prices: list[dict], sma_windows: list[int],
                 path: Path, title: str = "Price") -> None:
-    """Line chart of close price with optional SMA overlays."""
+    """Line chart of close price with optional SMA overlays.
+
+    Sorts `prices` by date ascending before plotting. The input may be in any
+    order (FMP's historical-prices endpoint returns newest-first, but the
+    function does not rely on that contract).
+    """
     fig, ax = plt.subplots(figsize=(10, 5))
-    dates = [datetime.strptime(p["date"], "%Y-%m-%d") for p in prices][::-1]
-    closes = np.array([p["close"] for p in prices])[::-1]
+    sorted_rows = sorted(prices, key=lambda p: p["date"])
+    dates = [datetime.strptime(p["date"], "%Y-%m-%d") for p in sorted_rows]
+    closes = np.array([p["close"] for p in sorted_rows])
     ax.plot(dates, closes, label="Close")
     for w in sma_windows:
         if len(closes) < w:

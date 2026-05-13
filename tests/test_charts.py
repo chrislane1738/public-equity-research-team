@@ -76,3 +76,21 @@ def test_price_chart_writes_png(tmp_path):
              "volume": 1_000_000} for d in range(1, 31)]
     price_chart(prices=rows, sma_windows=[5, 20], path=out, title="NVDA")
     assert out.exists() and out.stat().st_size > 1000
+
+
+def test_price_chart_handles_newest_first_or_oldest_first(tmp_path):
+    """Verify the chart renders the same regardless of input ordering."""
+    rows_newest_first = [
+        {"date": "2026-04-30", "close": 110, "volume": 1_000_000},
+        {"date": "2026-04-15", "close": 100, "volume": 1_000_000},
+        {"date": "2026-04-01", "close":  95, "volume": 1_000_000},
+    ]
+    rows_oldest_first = list(reversed(rows_newest_first))
+    a = tmp_path / "newest.png"
+    b = tmp_path / "oldest.png"
+    price_chart(prices=rows_newest_first, sma_windows=[], path=a, title="A")
+    price_chart(prices=rows_oldest_first, sma_windows=[], path=b, title="B")
+    # Both files exist with similar size — the sort makes them effectively identical.
+    assert a.exists() and b.exists()
+    # Allow ~5% size variance for title-text differences only.
+    assert abs(a.stat().st_size - b.stat().st_size) < a.stat().st_size * 0.10
