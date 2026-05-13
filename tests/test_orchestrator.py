@@ -6,6 +6,17 @@ import pytest
 
 from backend.orchestrator import Orchestrator
 
+DECK_SLIDE_PACK_JSON = json.dumps({
+    "thesis_bullets": ["a", "b", "c"],
+    "triangulation_rows": [["DCF Blend", 158, 0.5], ["Comps", 165, 0.5]],
+    "top_risks": ["x", "y", "z"],
+    "slide_bodies": {t: f"Body for {t}" for t in [
+        "Investment Thesis", "Business Snapshot", "Industry & Moat",
+        "Bespoke KPIs", "Financial Performance", "Forecast", "DCF",
+        "Comps", "Valuation Triangulation", "Catalysts",
+        "Risks / Bear Case", "Technical Setup", "Recommendation"]},
+})
+
 
 class FakeMsg:
     def __init__(self, text):
@@ -110,6 +121,7 @@ def mock_anthropic():
         FakeMsg(text=dcf_section),
         FakeMsg(text=synthesis),
         FakeMsg(text=memo),
+        FakeMsg(text=DECK_SLIDE_PACK_JSON),    # <-- new
     ])
     return c
 
@@ -139,6 +151,9 @@ async def test_full_deep_dive_dispatches_real_agents(
     assert state["status"] == "complete"
     assert state["rating"] == "Buy"
     assert state["stages"]["dcf"] == "complete"
+    assert (td / "reports" / "pitch.pptx").exists()
+    assert (td / "reports" / "onepager.pdf").exists()
+    assert state["stages"]["deck_builder"] == "complete"
 
 
 def test_extract_rating_returns_hold_for_explicit_hold():

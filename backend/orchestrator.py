@@ -21,12 +21,16 @@ from backend.agents.fundamentals import FundamentalsAgent
 from backend.agents.industry import IndustryAgent
 from backend.agents.macro import MacroAgent
 from backend.agents.md import MDAgent
+from backend.agents.deck_builder import DeckBuilderAgent
 from backend.agents.memo_builder import MemoBuilderAgent
 from backend.agents.risk import RiskAgent
 from backend.agents.technicals import TechnicalsAgent
 
 
 RATING_PATTERN = re.compile(r"\*\*Rating:\*\*\s*(Buy|Hold|Sell)", re.IGNORECASE)
+PT_PATTERN = re.compile(
+    r"\*\*(?:Price Target|PT)[^:]*:\*\*\s*\$?([0-9,.]+)", re.IGNORECASE
+)
 
 
 class Orchestrator:
@@ -118,12 +122,28 @@ class Orchestrator:
         state["rating"] = self._extract_rating(synthesis)
         state["stages"]["synthesis"] = "complete"
 
-        # Stage 4 — Production (Memo only — Task 19 wires Deck in parallel)
+        # Stage 4 — Production (Deck + Memo, parallel)
         state["current_stage"] = "production"
         memo = MemoBuilderAgent(self.anthropic,
                                 model=self.settings.model_for("memo_builder"))
-        await memo.run(ticker=ticker, ticker_dir=ticker_dir, rating=state["rating"])
-        state["stages"]["memo_builder"] = "complete"
+        deck = DeckBuilderAgent(self.anthropic,
+                                model=self.settings.model_for("deck_builder"))
+
+        quote = await self.fmp.get_quote(ticker)
+        current_price = quote.get("price", 0)
+        # Try to read the blended PT off the synthesis; fall back to current.
+        pt_value = self._extract_pt(synthesis) or current_price
+
+        prod_results = await asyncio.gather(
+            memo.run(ticker=ticker, ticker_dir=ticker_dir, rating=state["rating"]),
+            deck.run(ticker=ticker, ticker_dir=ticker_dir, rating=state["rating"],
+                     price_target=pt_value, current_price=current_price),
+            return_exceptions=True,
+        )
+        for name, res in zip(["memo_builder", "deck_builder"], prod_results):
+            state["stages"][name] = "failed" if isinstance(res, Exception) else "complete"
+            if isinstance(res, Exception):
+                state.setdefault("errors", {})[name] = str(res)
 
         state["status"] = "complete"
         state["current_stage"] = None
@@ -133,3 +153,13 @@ class Orchestrator:
     def _extract_rating(synthesis: str) -> str:
         m = RATING_PATTERN.search(synthesis)
         return m.group(1).title() if m else "Hold"
+
+    @staticmethod
+    def _extract_pt(synthesis: str) -> float | None:
+        m = PT_PATTERN.search(synthesis)
+        if not m:
+            return None
+        try:
+            return float(m.group(1).replace(",", ""))
+        except ValueError:
+            return None

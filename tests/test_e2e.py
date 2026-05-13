@@ -51,6 +51,17 @@ AI compute demand remains the structural driver.
 Top risk: AI capex pullback.
 """
 
+DECK_SLIDE_PACK_JSON = json.dumps({
+    "thesis_bullets": ["a", "b", "c"],
+    "triangulation_rows": [["DCF Blend", 1200, 0.5], ["Comps", 1250, 0.5]],
+    "top_risks": ["x", "y", "z"],
+    "slide_bodies": {t: f"Body for {t}" for t in [
+        "Investment Thesis", "Business Snapshot", "Industry & Moat",
+        "Bespoke KPIs", "Financial Performance", "Forecast", "DCF",
+        "Comps", "Valuation Triangulation", "Catalysts",
+        "Risks / Bear Case", "Technical Setup", "Recommendation"]},
+})
+
 
 async def test_full_deep_dive_e2e_produces_memo_docx(tmp_path):
     """Full pipeline test: EDGAR HTTP mocked at AsyncClient transport level,
@@ -135,6 +146,7 @@ async def test_full_deep_dive_e2e_produces_memo_docx(tmp_path):
         FakeAnthropicMsg(text="# DCF — NVDA\nBlended PT $1,150.\n"),      # DCF section
         FakeAnthropicMsg(text=SYNTHESIS_OUT),                              # MD synthesis
         FakeAnthropicMsg(text=MEMO_OUT),                                   # Memo Builder
+        FakeAnthropicMsg(text=DECK_SLIDE_PACK_JSON),                       # Deck Builder
     ])
 
     edgar = EdgarClient(user_agent="Test test@example.com")
