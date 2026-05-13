@@ -117,6 +117,13 @@ async def test_full_deep_dive_e2e_produces_memo_docx(tmp_path):
         "weight_equity": 0.99, "weight_debt": 0.01, "cost_of_debt_pct": 4.5,
     })
     anthropic = MagicMock()
+    # NOTE: Stage 2a (Industry, Comps, Macro, Risk, Technicals) runs via
+    # asyncio.gather — actual LLM-call order is governed by how many pre-LLM
+    # awaits each agent does, NOT submission order. Concretely the order is
+    # roughly: risk (0 awaits) → technicals (1) → industry (2) → macro (3) →
+    # comps (~7). All five Stage 2a responses are intentionally interchangeable
+    # markdown; do NOT add structural validation to any of them without
+    # switching the test to a callable side_effect that matches by call args.
     anthropic.messages.create = AsyncMock(side_effect=[
         FakeAnthropicMsg(text=kpi_json),                                  # Fundamentals KPI
         FakeAnthropicMsg(text="# Industry & Moat — NVDA\nWide moat.\n"),  # Industry

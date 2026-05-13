@@ -92,6 +92,13 @@ def mock_anthropic():
     synthesis = "# Synthesis\n**Rating:** Buy\n**PT:** $158\n"
     memo = "# NVDA Memo\n## Executive Summary\nBuy.\n"
 
+    # NOTE: Stage 2a (Industry, Comps, Macro, Risk, Technicals) runs via
+    # asyncio.gather — actual LLM-call order is governed by how many pre-LLM
+    # awaits each agent does, NOT submission order. Concretely the order is
+    # roughly: risk (0 awaits) → technicals (1) → industry (2) → macro (3) →
+    # comps (~7). All five Stage 2a responses are intentionally interchangeable
+    # markdown; do NOT add structural validation to any of them without
+    # switching the test to a callable side_effect that matches by call args.
     c.messages.create = AsyncMock(side_effect=[
         FakeMsg(text=fund_kpi),
         FakeMsg(text=industry),
@@ -132,3 +139,15 @@ async def test_full_deep_dive_dispatches_real_agents(
     assert state["status"] == "complete"
     assert state["rating"] == "Buy"
     assert state["stages"]["dcf"] == "complete"
+
+
+def test_extract_rating_returns_hold_for_explicit_hold():
+    assert Orchestrator._extract_rating("# Synthesis\n**Rating:** Hold\n") == "Hold"
+
+
+def test_extract_rating_returns_sell_for_explicit_sell():
+    assert Orchestrator._extract_rating("# Synthesis\n**Rating:** Sell\n") == "Sell"
+
+
+def test_extract_rating_falls_back_to_hold_when_no_match():
+    assert Orchestrator._extract_rating("synthesis with no rating tag") == "Hold"
