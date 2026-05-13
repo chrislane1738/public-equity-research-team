@@ -101,13 +101,16 @@ class Orchestrator:
         self.settings = settings
         self._event_bus = event_bus
 
+    def _make_logger(self, ticker_dir: Path, job_id: str) -> JobLogger:
+        return JobLogger(job_id=job_id, log_dir=ticker_dir / "_logs",
+                         event_bus=self._event_bus)
+
     async def run_full_deep_dive(self, ticker: str, job_id: str | None = None) -> dict[str, Any]:
         ticker = ticker.upper()
         ticker_dir = self.research_dir / ticker
         ticker_dir.mkdir(parents=True, exist_ok=True)
         job_id = job_id or str(uuid.uuid4())
-        logger = JobLogger(job_id=job_id, log_dir=ticker_dir / "_logs",
-                           event_bus=self._event_bus)
+        logger = self._make_logger(ticker_dir, job_id)
 
         state: dict[str, Any] = {"ticker": ticker, "stages": {}, "status": "running",
                                  "job_id": job_id}
@@ -234,8 +237,7 @@ class Orchestrator:
         ticker_dir = self.research_dir / ticker
         ticker_dir.mkdir(parents=True, exist_ok=True)
         job_id = job_id or str(uuid.uuid4())
-        logger = JobLogger(job_id=job_id, log_dir=ticker_dir / "_logs",
-                           event_bus=self._event_bus)
+        logger = self._make_logger(ticker_dir, job_id)
 
         state: dict[str, Any] = {"ticker": ticker, "stages": {}, "status": "running",
                                  "job_id": job_id, "workflow": "earnings-update"}
@@ -301,8 +303,7 @@ class Orchestrator:
         ticker_dir = self.research_dir / ticker
         ticker_dir.mkdir(parents=True, exist_ok=True)
         job_id = job_id or str(uuid.uuid4())
-        logger = JobLogger(job_id=job_id, log_dir=ticker_dir / "_logs",
-                           event_bus=self._event_bus)
+        logger = self._make_logger(ticker_dir, job_id)
 
         state: dict[str, Any] = {"ticker": ticker, "stages": {}, "status": "running",
                                  "job_id": job_id, "workflow": "morning-note"}
@@ -351,8 +352,7 @@ class Orchestrator:
         ticker_dir = self.research_dir / ticker
         ticker_dir.mkdir(parents=True, exist_ok=True)
         job_id = job_id or str(uuid.uuid4())
-        logger = JobLogger(job_id=job_id, log_dir=ticker_dir / "_logs",
-                           event_bus=self._event_bus)
+        logger = self._make_logger(ticker_dir, job_id)
 
         state: dict[str, Any] = {"ticker": ticker, "stages": {}, "status": "running",
                                  "job_id": job_id, "workflow": "thesis-check",
@@ -484,8 +484,7 @@ class Orchestrator:
         for t in tickers:
             td = self.research_dir / t
             td.mkdir(parents=True, exist_ok=True)
-            logger = JobLogger(job_id=job_id, log_dir=td / "_logs",
-                               event_bus=self._event_bus)
+            logger = self._make_logger(td, job_id)
 
             try:
                 cik = await self.cik_resolver.resolve(t)

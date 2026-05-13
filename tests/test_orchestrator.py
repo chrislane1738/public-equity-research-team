@@ -181,6 +181,7 @@ async def test_orchestrator_publishes_to_event_bus(
     await orch.run(workflow="morning-note", job_id="job-bus-1", ticker="NVDA")
     event = await asyncio.wait_for(q.get(), timeout=2.0)
     assert event["job_id"] == "job-bus-1"
+    assert event["type"] in {"agent_completed", "agent_failed", "stage"}
 
 
 def test_extract_rating_returns_hold_for_explicit_hold():
