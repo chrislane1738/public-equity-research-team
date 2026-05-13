@@ -1,0 +1,10 @@
+{
+  "income":  [{"date": "2024-12-31", "symbol": "AAPL", "revenue": 391035000000,
+               "grossProfit": 174044000000, "operatingIncome": 121379000000,
+               "ebitda": 133000000000, "netIncome": 100389000000, "eps": 6.42}],
+  "balance": [{"date": "2024-12-31", "symbol": "AAPL", "totalAssets": 364980000000,
+               "totalLiabilities": 308030000000, "totalStockholdersEquity": 56950000000,
+               "cashAndCashEquivalents": 29943000000, "totalDebt": 101000000000}],
+  "cash":    [{"date": "2024-12-31", "symbol": "AAPL", "operatingCashFlow": 118254000000,
+               "capitalExpenditure": -9447000000, "freeCashFlow": 108807000000}]
+}

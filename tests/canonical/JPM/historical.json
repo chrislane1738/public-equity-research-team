@@ -1,0 +1,8 @@
+{
+  "symbol": "JPM",
+  "historical": [
+    {"date": "2026-05-09", "close": 200.0, "volume": 10000000},
+    {"date": "2026-05-08", "close": 198.5, "volume": 9500000},
+    {"date": "2026-05-07", "close": 197.0, "volume": 9200000}
+  ]
+}

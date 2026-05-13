@@ -1,0 +1,10 @@
+{
+  "income":  [{"date": "2024-12-31", "symbol": "XOM", "revenue": 339247000000,
+               "grossProfit": 130000000000, "operatingIncome": 51000000000,
+               "ebitda": 82000000000, "netIncome": 36010000000, "eps": 9.07}],
+  "balance": [{"date": "2024-12-31", "symbol": "XOM", "totalAssets": 376320000000,
+               "totalLiabilities": 170000000000, "totalStockholdersEquity": 206320000000,
+               "cashAndCashEquivalents": 22500000000, "totalDebt": 42000000000}],
+  "cash":    [{"date": "2024-12-31", "symbol": "XOM", "operatingCashFlow": 55000000000,
+               "capitalExpenditure": -23000000000, "freeCashFlow": 32000000000}]
+}

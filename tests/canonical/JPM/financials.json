@@ -1,0 +1,10 @@
+{
+  "income":  [{"date": "2024-12-31", "symbol": "JPM", "revenue": 162958000000,
+               "grossProfit": 110000000000, "operatingIncome": 68000000000,
+               "ebitda": 72000000000, "netIncome": 50000000000, "eps": 17.42}],
+  "balance": [{"date": "2024-12-31", "symbol": "JPM", "totalAssets": 3900000000000,
+               "totalLiabilities": 3615000000000, "totalStockholdersEquity": 285000000000,
+               "cashAndCashEquivalents": 460000000000, "totalDebt": 350000000000}],
+  "cash":    [{"date": "2024-12-31", "symbol": "JPM", "operatingCashFlow": 65000000000,
+               "capitalExpenditure": -8000000000, "freeCashFlow": 57000000000}]
+}
