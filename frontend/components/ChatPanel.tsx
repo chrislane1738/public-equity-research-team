@@ -6,6 +6,7 @@ import { api } from "@/lib/api";
 import { openJobStream } from "@/lib/ws";
 import type { JobStreamHandle } from "@/lib/ws";
 import MdProgress from "./MdProgress";
+import FilePreviewPanel from "./FilePreviewPanel";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
@@ -101,6 +102,14 @@ export default function ChatPanel() {
       streamRef.current = null;
     };
   }, [appendMessage, pushJobLog, selectTicker, setActiveJob, setFileTree]);
+
+  // If active tab is a file preview, render that instead of chat messages.
+  // Placed after all hooks to preserve hook ordering (rules-of-hooks). The
+  // job:dispatched listener above keeps firing because the parent stays mounted
+  // when only the active tab changes.
+  if (activeTabId.startsWith("file:")) {
+    return <FilePreviewPanel path={activeTabId.slice(5)} />;
+  }
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">

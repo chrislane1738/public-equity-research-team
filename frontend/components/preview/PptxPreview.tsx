@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import JSZip from "jszip";
-import type { PreviewProps } from "../ArtifactPreviewModal";
+import type { PreviewProps } from "../FilePreviewPanel";
 
 interface SlideTitle {
   idx: number;

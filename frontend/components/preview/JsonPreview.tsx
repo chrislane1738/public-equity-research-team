@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import type { PreviewProps } from "../ArtifactPreviewModal";
+import type { PreviewProps } from "../FilePreviewPanel";
 
 export default function JsonPreview({ url }: PreviewProps) {
   const [text, setText] = useState("");

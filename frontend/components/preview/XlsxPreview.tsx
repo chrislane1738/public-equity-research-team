@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import * as XLSX from "xlsx";
-import type { PreviewProps } from "../ArtifactPreviewModal";
+import type { PreviewProps } from "../FilePreviewPanel";
 
 export default function XlsxPreview({ url }: PreviewProps) {
   const [sheets, setSheets] = useState<{ name: string; rows: unknown[][] }[]>([]);

@@ -11,7 +11,6 @@ import {
   File as FileIcon,
 } from "lucide-react";
 import type { FileNode } from "@/lib/types";
-import ArtifactPreviewModal from "./ArtifactPreviewModal";
 
 function Node({
   node,
@@ -62,7 +61,7 @@ export default function FolderTree() {
   const selectedTicker = useWorkspace((s) => s.selectedTicker);
   const fileTree = useWorkspace((s) => s.fileTree);
   const setFileTree = useWorkspace((s) => s.setFileTree);
-  const [previewPath, setPreviewPath] = useState<string | null>(null);
+  const openTab = useWorkspace((s) => s.openTab);
 
   useEffect(() => {
     if (!selectedTicker) {
@@ -74,6 +73,11 @@ export default function FolderTree() {
       .then(setFileTree)
       .catch(() => setFileTree([]));
   }, [selectedTicker, setFileTree]);
+
+  function handleOpenFile(path: string) {
+    const name = path.split("/").pop() ?? path;
+    openTab({ id: `file:${path}`, label: name });
+  }
 
   return (
     <div className="p-3">
@@ -105,11 +109,8 @@ export default function FolderTree() {
         </p>
       )}
       {fileTree.map((n) => (
-        <Node key={n.path} node={n} depth={0} onOpenFile={setPreviewPath} />
+        <Node key={n.path} node={n} depth={0} onOpenFile={handleOpenFile} />
       ))}
-      {previewPath && (
-        <ArtifactPreviewModal path={previewPath} onClose={() => setPreviewPath(null)} />
-      )}
     </div>
   );
 }

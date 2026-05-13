@@ -1,5 +1,5 @@
 "use client";
-import type { PreviewProps } from "../ArtifactPreviewModal";
+import type { PreviewProps } from "../FilePreviewPanel";
 
 export default function ImagePreview({ url, name }: PreviewProps) {
   // eslint-disable-next-line @next/next/no-img-element
