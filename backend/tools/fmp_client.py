@@ -1,4 +1,9 @@
-"""FMP HTTP client with daily TTL filesystem cache."""
+"""FMP HTTP client with daily TTL filesystem cache.
+
+Endpoints use FMP /stable (post-2025-08-31). All paths take ?symbol= as a
+query param. Per-call response is cached in `cache_dir/<TICKER>_<endpoint>.json`
+with a daily TTL.
+"""
 import json
 import time
 from pathlib import Path
@@ -7,8 +12,6 @@ from typing import Any
 import httpx
 
 
-# FMP migrated off /api/v3 on 2025-08-31; /stable/ is the current path.
-# Ticker is now a query param (?symbol=NVDA) instead of a path segment.
 BASE_URL = "https://financialmodelingprep.com/stable"
 DAILY_TTL_SECONDS = 24 * 60 * 60
 
@@ -20,31 +23,38 @@ class FmpClient:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.ttl_seconds = ttl_seconds
 
+    # ----- cache helpers -----
+
     def _cache_path(self, endpoint: str, ticker: str) -> Path:
-        return self.cache_dir / f"{ticker.upper()}_{endpoint}.json"
+        slug = endpoint.replace("/", "_")
+        return self.cache_dir / f"{ticker.upper()}_{slug}.json"
 
     def _read_cache(self, path: Path) -> Any | None:
         if not path.exists():
             return None
-        age = time.time() - path.stat().st_mtime
-        if age > self.ttl_seconds:
+        if (time.time() - path.stat().st_mtime) > self.ttl_seconds:
             return None
         return json.loads(path.read_text())
 
-    async def _get(self, endpoint: str, ticker: str) -> Any:
+    async def _get(self, endpoint: str, ticker: str, extra_params: dict | None = None) -> Any:
         cache_file = self._cache_path(endpoint, ticker)
         cached = self._read_cache(cache_file)
         if cached is not None:
             return cached
 
+        params = {"symbol": ticker.upper(), "apikey": self.api_key}
+        if extra_params:
+            params.update(extra_params)
         url = f"{BASE_URL}/{endpoint}"
         async with httpx.AsyncClient(timeout=30.0) as http:
-            resp = await http.get(url, params={"symbol": ticker.upper(), "apikey": self.api_key})
+            resp = await http.get(url, params=params)
             if resp.status_code != 200:
                 raise RuntimeError(f"FMP {endpoint} failed: {resp.status_code} {resp.text}")
             data = resp.json()
             cache_file.write_text(json.dumps(data))
             return data
+
+    # ----- Plan A endpoints -----
 
     async def get_financials(self, ticker: str) -> dict[str, Any]:
         return {
@@ -52,3 +62,58 @@ class FmpClient:
             "balance": await self._get("balance-sheet-statement", ticker),
             "cash": await self._get("cash-flow-statement", ticker),
         }
+
+    # ----- Plan B extensions -----
+
+    async def get_profile(self, ticker: str) -> dict[str, Any]:
+        rows = await self._get("profile", ticker)
+        if not rows:
+            raise RuntimeError(f"FMP profile empty for {ticker}")
+        return rows[0] if isinstance(rows, list) else rows
+
+    async def get_quote(self, ticker: str) -> dict[str, Any]:
+        rows = await self._get("quote", ticker)
+        if not rows:
+            raise RuntimeError(f"FMP quote empty for {ticker}")
+        return rows[0] if isinstance(rows, list) else rows
+
+    async def get_historical_prices(self, ticker: str, days: int = 365) -> list[dict[str, Any]]:
+        body = await self._get("historical-price-eod/full", ticker)
+        history = body.get("historical", []) if isinstance(body, dict) else body
+        return list(history)[:days]
+
+    async def get_peers(self, ticker: str) -> list[str]:
+        rows = await self._get("stock-peers", ticker)
+        if not rows:
+            return []
+        rec = rows[0] if isinstance(rows, list) else rows
+        peers = rec.get("peers", [])
+        return [p for p in peers if p.upper() != ticker.upper()]
+
+    async def get_key_metrics(self, ticker: str) -> list[dict[str, Any]]:
+        rows = await self._get("key-metrics", ticker)
+        return list(rows) if rows else []
+
+    async def get_ratios(self, ticker: str) -> list[dict[str, Any]]:
+        rows = await self._get("ratios", ticker)
+        return list(rows) if rows else []
+
+    async def get_estimates(self, ticker: str) -> list[dict[str, Any]]:
+        rows = await self._get("analyst-estimates", ticker)
+        return list(rows) if rows else []
+
+    async def get_10y_treasury_rate(self) -> float:
+        """Return the latest 10-year UST rate as a percent (e.g. 4.25 for 4.25%)."""
+        cache_file = self.cache_dir / "_TREASURY_RATES.json"
+        cached = self._read_cache(cache_file)
+        if cached is None:
+            url = f"{BASE_URL}/treasury-rates"
+            async with httpx.AsyncClient(timeout=30.0) as http:
+                resp = await http.get(url, params={"apikey": self.api_key})
+                if resp.status_code != 200:
+                    raise RuntimeError(f"FMP treasury-rates failed: {resp.status_code} {resp.text}")
+                cached = resp.json()
+                cache_file.write_text(json.dumps(cached))
+        if not cached:
+            raise RuntimeError("FMP treasury-rates empty")
+        return float(cached[0]["year10"])
