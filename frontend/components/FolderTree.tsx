@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { useWorkspace } from "@/lib/store";
 import { api } from "@/lib/api";
 import {
@@ -76,9 +77,28 @@ export default function FolderTree() {
 
   return (
     <div className="p-3">
-      <h3 className="text-xs uppercase text-muted-foreground tracking-wider mb-2">
-        {selectedTicker ?? "no ticker selected"}
-      </h3>
+      <div className="flex items-center justify-between mb-2">
+        <h3 className="text-xs uppercase text-muted-foreground tracking-wider">
+          {selectedTicker ?? "no ticker selected"}
+        </h3>
+        {selectedTicker && (
+          <button
+            type="button"
+            className="text-xs text-muted-foreground hover:text-foreground underline"
+            onClick={async () => {
+              try {
+                const p = await api.getTickerPath(selectedTicker);
+                await navigator.clipboard.writeText(p);
+                toast.success(`Path copied: ${p}`);
+              } catch (e) {
+                toast.error(`Couldn't copy path: ${(e as Error).message}`);
+              }
+            }}
+          >
+            Copy path
+          </button>
+        )}
+      </div>
       {selectedTicker && fileTree.length === 0 && (
         <p className="text-xs text-muted-foreground italic">
           No artifacts yet. Run a workflow.

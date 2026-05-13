@@ -86,6 +86,19 @@ def test_get_file_404_for_missing(client):
     assert r.status_code == 404
 
 
+def test_get_ticker_path(client):
+    c, _ = client
+    r = c.get("/tickers/NVDA/path")
+    assert r.status_code == 200
+    assert r.json()["path"].endswith("/NVDA")
+
+
+def test_get_ticker_path_404_for_unknown(client):
+    c, _ = client
+    r = c.get("/tickers/ZZZZZ/path")
+    assert r.status_code == 404
+
+
 def test_get_file_rejects_symlink_escape(tmp_path: Path):
     """A symlink inside RESEARCH_DIR pointing outside must not be readable."""
     import os

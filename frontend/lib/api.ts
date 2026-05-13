@@ -23,6 +23,11 @@ export const api = {
     return (await jsonOrThrow<{ tree: FileNode[] }>(r)).tree;
   },
 
+  async getTickerPath(ticker: string): Promise<string> {
+    const r = await fetch(`${BASE}/tickers/${encodeURIComponent(ticker)}/path`);
+    return (await jsonOrThrow<{ path: string }>(r)).path;
+  },
+
   fileUrl(path: string): string {
     return `${BASE}/files?path=${encodeURIComponent(path)}`;
   },

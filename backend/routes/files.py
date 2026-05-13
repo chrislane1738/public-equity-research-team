@@ -39,6 +39,13 @@ def build_files_router(research_dir: Path) -> APIRouter:
             raise HTTPException(404, "ticker not found")
         return {"ticker": ticker, "tree": _walk(ticker_dir, base)}
 
+    @router.get("/tickers/{ticker}/path")
+    def get_ticker_path(ticker: str):
+        p = (base / ticker).resolve()
+        if not _is_within(base, p) or not p.exists():
+            raise HTTPException(404, "ticker not found")
+        return {"path": str(p)}
+
     @router.get("/files")
     def get_file(path: str = Query(..., description="path relative to RESEARCH_DIR")):
         if not path or path.startswith("/") or ".." in Path(path).parts:
