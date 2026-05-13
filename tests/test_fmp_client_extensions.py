@@ -119,3 +119,31 @@ async def test_extension_endpoints_use_cache(respx_mock, client):
     await client.get_profile("NVDA")
     await client.get_profile("NVDA")
     assert route.call_count == 1
+
+
+@respx.mock(using="httpx")
+async def test_get_profile_raises_on_empty_response(respx_mock, client):
+    respx_mock.get("https://financialmodelingprep.com/stable/profile").mock(
+        return_value=Response(200, json=[])
+    )
+    with pytest.raises(RuntimeError, match="profile empty"):
+        await client.get_profile("ZZZZ")
+
+
+@respx.mock(using="httpx")
+async def test_get_quote_raises_on_empty_response(respx_mock, client):
+    respx_mock.get("https://financialmodelingprep.com/stable/quote").mock(
+        return_value=Response(200, json=[])
+    )
+    with pytest.raises(RuntimeError, match="quote empty"):
+        await client.get_quote("ZZZZ")
+
+
+@respx.mock(using="httpx")
+async def test_get_10y_treasury_rate_uses_cache(respx_mock, client):
+    route = respx_mock.get("https://financialmodelingprep.com/stable/treasury-rates").mock(
+        return_value=Response(200, json=[{"date": "2026-05-09", "year10": 4.25, "year30": 4.45}])
+    )
+    await client.get_10y_treasury_rate()
+    await client.get_10y_treasury_rate()
+    assert route.call_count == 1
