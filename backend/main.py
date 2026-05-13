@@ -9,6 +9,7 @@ from backend.db.job_repo import JobRepo
 from backend.db.sqlite_client import SqliteClient
 from backend.job_runner import JobRunner
 from backend.observability.event_bus import JobEventBus
+from backend.routes.files import build_files_router
 from backend.routes.jobs import build_router
 
 
@@ -43,6 +44,7 @@ def build_app(
 
     app.include_router(build_router(runner=runner, job_repo=job_repo,
                                     event_bus=bus))
+    app.include_router(build_files_router(research_dir))
 
     @app.get("/healthz")
     async def healthz():
