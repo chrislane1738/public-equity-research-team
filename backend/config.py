@@ -5,6 +5,8 @@ from pathlib import Path
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -16,7 +18,7 @@ class Settings(BaseSettings):
 
     research_dir: Path = Path.home() / "Documents" / "equity-research"
     anthropic_model: str = "claude-opus-4-7"
-    sqlite_path: Path = Path("./backend/db/research.sqlite")
+    sqlite_path: Path = _REPO_ROOT / "backend" / "db" / "research.sqlite"
 
     port_backend: int = 8000
     port_frontend: int = 3000

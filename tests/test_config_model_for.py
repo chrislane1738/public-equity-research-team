@@ -41,3 +41,18 @@ def test_fred_api_key_is_loaded(monkeypatch, tmp_path):
 
     s = Settings()
     assert s.fred_api_key == "fred-secret"
+
+
+def test_sqlite_path_is_repo_anchored_not_cwd_relative(monkeypatch, tmp_path):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    monkeypatch.setenv("FMP_API_KEY", "x")
+    monkeypatch.setenv("FRED_API_KEY", "x")
+    monkeypatch.setenv("SEC_EDGAR_USER_AGENT", "x x@x.com")
+    monkeypatch.setenv("RESEARCH_DIR", str(tmp_path))
+    monkeypatch.delenv("SQLITE_PATH", raising=False)
+
+    s = Settings()
+    # The default must be absolute and anchored at the repo, not CWD-relative.
+    assert s.sqlite_path.is_absolute(), f"sqlite_path should be absolute, got {s.sqlite_path}"
+    assert s.sqlite_path.name == "research.sqlite"
+    assert s.sqlite_path.parent.name == "db"
