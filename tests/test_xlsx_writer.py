@@ -77,6 +77,11 @@ def test_write_dcf_xlsx_summary_tab_contains_blended_pt(tmp_path):
     wb = load_workbook(out)
     cells = [c.value for c in wb["Summary"]["A"]]
     assert any(v == "Blended PT" for v in cells)
+    # Confirm the value cell next to "Blended PT" actually holds the input.
+    sm = wb["Summary"]
+    label_row = next(i for i, row in enumerate(sm.iter_rows(values_only=True), start=1)
+                     if row and row[0] == "Blended PT")
+    assert sm.cell(row=label_row, column=2).value == 125.0
 
 
 def test_write_comps_xlsx_creates_required_tabs(tmp_path):

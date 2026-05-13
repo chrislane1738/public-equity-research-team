@@ -134,8 +134,8 @@ def write_dcf_xlsx(
     sens = wb.create_sheet("Sensitivities")
     sens["A1"] = "GGM: rows = WACC, cols = terminal g"
     sens["A1"].font = HEADER
+    ggm_ys = sorted({k[0] for k in sensitivity_ggm.keys()}) if sensitivity_ggm else []
     if sensitivity_ggm:
-        ggm_ys = sorted({k[0] for k in sensitivity_ggm.keys()})
         ggm_xs = sorted({k[1] for k in sensitivity_ggm.keys()})
         for j, x in enumerate(ggm_xs):
             sens.cell(row=2, column=j + 2, value=x)
@@ -144,7 +144,7 @@ def write_dcf_xlsx(
             for j, x in enumerate(ggm_xs):
                 sens.cell(row=3 + i, column=j + 2,
                           value=sensitivity_ggm.get((y, x), ""))
-    base_row = 3 + max(len({k[0] for k in sensitivity_ggm.keys()}), 0) + 2
+    base_row = 3 + len(ggm_ys) + 2
     sens.cell(row=base_row, column=1, value="Exit: rows = WACC, cols = exit multiple").font = HEADER
     if sensitivity_exit:
         ex_ys = sorted({k[0] for k in sensitivity_exit.keys()})
