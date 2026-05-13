@@ -12,7 +12,7 @@ from backend.observability.event_bus import JobEventBus
 @pytest.fixture
 def client(tmp_path: Path):
     fmp = MagicMock()
-    fmp.get_stock_list = AsyncMock(return_value=[
+    fmp.search_symbols = AsyncMock(return_value=[
         {"symbol": "NVDA", "name": "NVIDIA Corporation", "exchange": "NASDAQ"},
         {"symbol": "NVTS", "name": "Navitas Semiconductor", "exchange": "NASDAQ"},
         {"symbol": "AAPL", "name": "Apple Inc.", "exchange": "NASDAQ"},
@@ -28,25 +28,27 @@ def client(tmp_path: Path):
         yield c, fmp
 
 
-def test_search_prefix_match(client):
+def test_search_returns_matches_from_fmp(client):
     c, _ = client
     r = c.get("/tickers/search", params={"q": "NV"})
     assert r.status_code == 200
     matches = [m["symbol"] for m in r.json()["results"]]
     assert "NVDA" in matches
     assert "NVTS" in matches
-    assert "AAPL" not in matches
 
 
 def test_search_filters_non_equity_exchanges(client):
-    c, _ = client
+    c, fmp = client
+    fmp.search_symbols.return_value = [
+        {"symbol": "XYZ", "name": "Random Bond", "exchange": "OTC"},
+    ]
     r = c.get("/tickers/search", params={"q": "X"})
     assert r.json()["results"] == []  # XYZ is OTC, excluded
 
 
 def test_search_caps_results_at_20(client):
     c, fmp = client
-    fmp.get_stock_list.return_value = [
+    fmp.search_symbols.return_value = [
         {"symbol": f"AAA{i:03d}", "name": f"A{i}", "exchange": "NASDAQ"}
         for i in range(50)
     ]

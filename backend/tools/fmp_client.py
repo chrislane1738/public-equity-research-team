@@ -118,21 +118,29 @@ class FmpClient:
             raise RuntimeError("FMP treasury-rates empty")
         return float(cached[0]["year10"])
 
-    async def get_stock_list(self) -> list[dict[str, Any]]:
-        """24h-cached list of all FMP-tracked tickers.
+    async def search_symbols(self, query: str, limit: int = 20) -> list[dict[str, Any]]:
+        """Live FMP symbol search.
 
-        FMP /stable/stock-list returns a flat list of {symbol, name, exchange, ...}.
-        Cached on disk because the list rarely changes intra-day and the call is large.
+        Returns rows with `{symbol, name, exchange, exchangeFullName, currency, ...}`.
+        Cached per-query for 1 hour at `_SEARCH_<QUERY>_<LIMIT>.json` — autocomplete
+        results don't need to be real-time, and a cache lets repeated keystrokes
+        avoid FMP round-trips.
         """
-        cache_file = self.cache_dir / "_STOCK_LIST.json"
-        cached = self._read_cache(cache_file)
-        if cached is None:
-            url = f"{BASE_URL}/stock-list"
-            async with httpx.AsyncClient(timeout=30.0) as http:
-                resp = await http.get(url, params={"apikey": self.api_key})
-                if resp.status_code != 200:
-                    raise RuntimeError(
-                        f"FMP stock-list failed: {resp.status_code} {resp.text}")
-                cached = resp.json()
-                cache_file.write_text(json.dumps(cached))
-        return list(cached) if cached else []
+        q = (query or "").strip().upper()
+        if not q:
+            return []
+        cache_file = self.cache_dir / f"_SEARCH_{q}_{limit}.json"
+        # 1-hour TTL for search; bypass the default 24h
+        if cache_file.exists() and (time.time() - cache_file.stat().st_mtime) < 3600:
+            return json.loads(cache_file.read_text())
+        url = f"{BASE_URL}/search-symbol"
+        async with httpx.AsyncClient(timeout=30.0) as http:
+            resp = await http.get(url, params={
+                "query": q, "limit": limit, "apikey": self.api_key,
+            })
+            if resp.status_code != 200:
+                raise RuntimeError(
+                    f"FMP search-symbol failed: {resp.status_code} {resp.text}")
+            data = resp.json() or []
+            cache_file.write_text(json.dumps(data))
+            return list(data)
