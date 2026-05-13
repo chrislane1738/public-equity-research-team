@@ -60,3 +60,15 @@ async def test_get_series_raises_on_http_error(respx_mock, client):
     )
     with pytest.raises(RuntimeError, match="403"):
         await client.get_series("DGS10")
+
+
+@respx.mock(using="httpx")
+async def test_get_series_refetches_when_ttl_expired(respx_mock, tmp_path):
+    # ttl_seconds=0 forces every read to be considered stale.
+    expiring = FredClient(api_key="x", cache_dir=tmp_path, ttl_seconds=0)
+    route = respx_mock.get("https://api.stlouisfed.org/fred/series/observations").mock(
+        return_value=Response(200, json={"observations": [{"date": "2026-05-09", "value": "1"}]})
+    )
+    await expiring.get_series("DGS10", limit=1)
+    await expiring.get_series("DGS10", limit=1)
+    assert route.call_count == 2

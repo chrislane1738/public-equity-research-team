@@ -24,6 +24,8 @@ class FredClient:
         self.ttl_seconds = ttl_seconds
 
     def _cache_path(self, series_id: str, limit: int) -> Path:
+        # NOTE: cache key includes `limit`. Different limits write separate files.
+        # Callers should use a stable `limit` per series to avoid redundant fetches.
         return self.cache_dir / f"_FRED_{series_id}_{limit}.json"
 
     def _read_cache(self, path: Path) -> Any | None:
@@ -60,6 +62,11 @@ class FredClient:
             v = o.get("value")
             if v in (None, "", "."):
                 continue
-            out.append({"date": o["date"], "value": float(v)})
+            try:
+                out.append({"date": o["date"], "value": float(v)})
+            except ValueError:
+                # FRED occasionally returns non-numeric strings during data revisions;
+                # treat them like missing observations rather than crashing the agent.
+                continue
         cache_file.write_text(json.dumps(out))
         return out
