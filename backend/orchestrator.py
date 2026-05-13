@@ -256,8 +256,9 @@ class Orchestrator:
         logger.log_agent("fundamentals", fr)
         state["stages"]["fundamentals"] = "complete"
 
-        # Re-run DCF and Risk in parallel (DCF still depends on existing
-        # comps/peer-multiples.json from a prior full-deep-dive)
+        # Re-run DCF and Risk in parallel. DCF will reuse comps/peer-multiples.json
+        # from a prior full-deep-dive if present, otherwise falls back to a
+        # default EV/EBITDA exit multiple.
         dcf = DCFAgent(self.anthropic, self.fmp,
                        model=self.settings.model_for("dcf"))
         risk = RiskAgent(self.anthropic, model=self.settings.model_for("risk"))

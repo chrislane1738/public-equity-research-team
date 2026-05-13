@@ -97,3 +97,26 @@ async def test_dcf_uses_peer_median_for_exit_multiple(tmp_path, mock_anthropic,
     prose_prompt = mock_anthropic.messages.create.call_args_list[1].kwargs["messages"][0]["content"]
     # peer median 22 * haircut 0.85 = 18.7
     assert "18.7" in prose_prompt or "18.70" in prose_prompt or "applied multiple" in prose_prompt.lower()
+
+
+async def test_dcf_runs_without_peer_multiples(tmp_path, mock_anthropic, mock_fmp):
+    """Regression: when comps/peer-multiples.json doesn't exist (e.g. earnings-update
+    workflow that doesn't run Comps), DCF should still complete using a default
+    EV/EBITDA exit multiple instead of crashing with FileNotFoundError."""
+    ticker_dir = tmp_path / "ANET"
+    ticker_dir.mkdir()
+    # Note: NO comps/peer-multiples.json pre-seeded.
+
+    agent = DCFAgent(anthropic_client=mock_anthropic, fmp_client=mock_fmp,
+                     model="claude-opus-4-7")
+    result = await agent.run(ticker="ANET", ticker_dir=ticker_dir)
+
+    # DCF outputs were written and no exception raised.
+    assert (ticker_dir / "dcf" / "section.md").exists()
+    assert (ticker_dir / "dcf" / "dcf.xlsx").exists()
+    assert result.stop_reason == "end_turn"
+
+    # The assumptions-prompt and prose-prompt should both signal the fallback
+    # so the LLM knows peers weren't available.
+    assumptions_prompt = mock_anthropic.messages.create.call_args_list[0].kwargs["messages"][0]["content"]
+    assert "NOT AVAILABLE" in assumptions_prompt or "not available" in assumptions_prompt.lower()

@@ -22,6 +22,11 @@ from backend.tools.dcf_engine import (EXIT_MULT_HAIRCUT, blend_terminal, compute
 from backend.tools.xlsx_writer import write_dcf_xlsx
 
 
+# Mid-cycle EV/EBITDA fallback when peer multiples are unavailable
+# (e.g. earnings-update workflow that doesn't run Comps).
+DEFAULT_EXIT_MULTIPLE = 12.0
+
+
 ASSUMPTIONS_PROMPT = """You are the DCF analyst on a sellside research team. Given
 the target's headline financials, peer median EV/EBITDA, and 10Y UST, return ONLY a
 JSON object with these keys (no prose, no markdown fences):
@@ -69,9 +74,15 @@ class DCFAgent:
         quote = await self.fmp.get_quote(ticker)
         financials = await self.fmp.get_financials(ticker)
         rf = await self.fmp.get_10y_treasury_rate()
-        peer_multiples = json.loads(
-            (ticker_dir / "comps" / "peer-multiples.json").read_text()
-        )
+
+        # Peer multiples may be missing on workflows that don't run Comps
+        # (e.g. earnings-update). Fall back to a sane default rather than crash.
+        peer_multiples_path = ticker_dir / "comps" / "peer-multiples.json"
+        peer_multiples: dict | None = None
+        try:
+            peer_multiples = json.loads(peer_multiples_path.read_text())
+        except (FileNotFoundError, OSError, json.JSONDecodeError):
+            peer_multiples = None
 
         income = (financials.get("income") or [{}])[0]
         balance = (financials.get("balance") or [{}])[0]
@@ -81,8 +92,27 @@ class DCFAgent:
         beta = profile.get("beta", 1.0) or 1.0
         shares = quote.get("sharesOutstanding", 0)
         current_price = quote.get("price", 0)
-        peer_med_multiple = peer_multiples["ev_to_ebitda"]["median"]
-        peer_p75 = peer_multiples["ev_to_ebitda"].get("p75")
+        if peer_multiples is not None:
+            peer_med_multiple = peer_multiples.get("ev_to_ebitda", {}).get(
+                "median", DEFAULT_EXIT_MULTIPLE)
+            peer_p75 = peer_multiples.get("ev_to_ebitda", {}).get("p75")
+        else:
+            peer_med_multiple = DEFAULT_EXIT_MULTIPLE
+            peer_p75 = None
+
+        if peer_multiples is not None:
+            peer_block = (
+                f"<external-content name=\"peer_multiples\">\n"
+                f"{json.dumps(peer_multiples, indent=2)}\n</external-content>\n\n"
+            )
+        else:
+            peer_block = (
+                f"<external-content name=\"peer_multiples\">\n"
+                f"NOT AVAILABLE — Comps did not run for this workflow. "
+                f"Use a sector-default EV/EBITDA of {DEFAULT_EXIT_MULTIPLE}x "
+                f"for the exit multiple anchor.\n"
+                f"</external-content>\n\n"
+            )
 
         assumptions_prompt = (
             f"Ticker: {ticker}\n"
@@ -91,8 +121,7 @@ class DCFAgent:
             f"net_debt={net_debt}\nbeta={beta}\nshares={shares}\n"
             f"current_price={current_price}\n"
             f"</external-content>\n\n"
-            f"<external-content name=\"peer_multiples\">\n"
-            f"{json.dumps(peer_multiples, indent=2)}\n</external-content>\n\n"
+            f"{peer_block}"
             f"<external-content name=\"macro\">\nrf_10y={rf}\n</external-content>\n\n"
             "Return the assumption JSON now."
         )
@@ -217,11 +246,14 @@ class DCFAgent:
                             y_axis_name="WACC (%)",
                             path=out_dir / "sensitivity.png")
 
+        peer_data_available = peer_multiples is not None
         prose_prompt = (
             f"Ticker: {ticker}\n"
             f"<external-content name=\"results\">\n"
             f"wacc={wacc}\nbeta={beta}\nrf={rf}\nerp=5.5\n"
-            f"peer_median_multiple={peer_med_multiple}\n"
+            f"peer_data_available={peer_data_available}\n"
+            f"peer_median_multiple={peer_med_multiple}"
+            f"{' (DEFAULT — no peer data)' if not peer_data_available else ''}\n"
             f"applied_multiple={applied_multiple:.2f}\n"
             f"sector_p75_cap_triggered="
             f"{peer_p75 is not None and applied_multiple >= peer_p75}\n"
@@ -230,7 +262,11 @@ class DCFAgent:
             f"blended_price={blended_price:.2f}\n"
             f"current_price={current_price}\n"
             f"</external-content>\n\n"
-            "Write the DCF section now."
+            + ("NOTE: Peer multiples were not available for this run "
+               f"(Comps did not run). The exit multiple uses a sector-default "
+               f"EV/EBITDA of {DEFAULT_EXIT_MULTIPLE}x. State this explicitly "
+               "in the section.\n\n" if not peer_data_available else "")
+            + "Write the DCF section now."
         )
         prose_llm = Agent(name="dcf", system_prompt=PROSE_PROMPT,
                           model=self.model, anthropic_client=self.anthropic,
