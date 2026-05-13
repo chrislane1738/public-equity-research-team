@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { useWorkspace } from "@/lib/store";
 import { api } from "@/lib/api";
 import { openJobStream } from "@/lib/ws";
+import type { JobStreamHandle } from "@/lib/ws";
 import MdProgress from "./MdProgress";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -27,6 +28,7 @@ export default function ChatPanel() {
   const setFileTree = useWorkspace((s) => s.setFileTree);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const streamRef = useRef<JobStreamHandle | null>(null);
 
   // Auto-scroll to the latest message.
   useEffect(() => {
@@ -49,7 +51,11 @@ export default function ChatPanel() {
         // Repo may not have flushed; the WS state frame will hydrate.
       }
 
-      const handle = openJobStream(api.baseUrl, jobId, async (ev) => {
+      // Close any prior stream before opening a new one. Multiple dispatches
+      // while a previous job is in flight would otherwise leave abandoned
+      // WebSockets that keep writing to the MD message stream.
+      streamRef.current?.close();
+      streamRef.current = openJobStream(api.baseUrl, jobId, async (ev) => {
         if (ev.type === "state") {
           setActiveJob(ev.state);
           if (ev.state.status === "complete") {
@@ -86,14 +92,14 @@ export default function ChatPanel() {
           });
         }
       });
-
-      // Cleanup is handled when the WS closes naturally on terminal — see
-      // backend/routes/jobs.py::stream_job. handle.close() not called here.
-      void handle;
     }
 
     window.addEventListener("job:dispatched", handler as EventListener);
-    return () => window.removeEventListener("job:dispatched", handler as EventListener);
+    return () => {
+      window.removeEventListener("job:dispatched", handler as EventListener);
+      streamRef.current?.close();
+      streamRef.current = null;
+    };
   }, [appendMessage, pushJobLog, selectTicker, setActiveJob, setFileTree]);
 
   return (
