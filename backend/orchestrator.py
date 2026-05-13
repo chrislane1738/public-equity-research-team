@@ -167,6 +167,33 @@ class Orchestrator:
         state["current_stage"] = None
         return state
 
+    async def run(self, workflow: str, **kwargs) -> dict[str, Any]:
+        if workflow == "full-deep-dive":
+            return await self.run_full_deep_dive(**kwargs)
+        if workflow == "earnings-update":
+            return await self.run_earnings_update(**kwargs)
+        if workflow == "morning-note":
+            return await self.run_morning_note(**kwargs)
+        if workflow == "thesis-check":
+            return await self.run_thesis_check(**kwargs)
+        if workflow == "sector-sweep":
+            return await self.run_sector_sweep(**kwargs)
+        raise ValueError(f"unknown workflow: {workflow}")
+
+    async def run_earnings_update(self, ticker: str, job_id: str | None = None) -> dict[str, Any]:
+        raise NotImplementedError("Task 23")
+
+    async def run_morning_note(self, ticker: str, job_id: str | None = None) -> dict[str, Any]:
+        raise NotImplementedError("Task 24")
+
+    async def run_thesis_check(self, ticker: str, question: str,
+                               job_id: str | None = None) -> dict[str, Any]:
+        raise NotImplementedError("Task 25")
+
+    async def run_sector_sweep(self, tickers: list[str],
+                               job_id: str | None = None) -> dict[str, Any]:
+        raise NotImplementedError("Task 26")
+
     @staticmethod
     def _extract_rating(synthesis: str) -> str:
         m = RATING_PATTERN.search(synthesis)

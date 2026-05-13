@@ -5,8 +5,10 @@ from pydantic import BaseModel
 
 
 class CreateJobRequest(BaseModel):
-    ticker: str
+    ticker: Optional[str] = None
+    tickers: Optional[list[str]] = None
     workflow: str = "full-deep-dive"
+    question: Optional[str] = None  # used by thesis-check
 
 
 class JobState(BaseModel):

@@ -15,6 +15,10 @@ def fake_orch():
         "status": "complete", "current_stage": None,
         "stages": {"fundamentals": "complete"}, "rating": "Buy",
     })
+    o.run = AsyncMock(return_value={
+        "status": "complete", "current_stage": None,
+        "stages": {"fundamentals": "complete"}, "rating": "Buy",
+    })
     return o
 
 
