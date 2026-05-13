@@ -74,6 +74,20 @@ async def test_log_error_publishes_event(tmp_path: Path):
 
 
 def test_event_bus_is_optional(tmp_path: Path):
+    """No bus supplied → log_agent works synchronously and writes the JSONL file."""
     logger = JobLogger("job-1", tmp_path)  # no bus
-    logger.log_agent("dcf", _StubResult())  # must not raise
+    logger.log_agent("dcf", _StubResult(cost=0.05))  # must not raise
     assert (tmp_path / "job-1.jsonl").exists()
+    assert logger.total_cost_usd() == 0.05
+
+
+def test_log_agent_with_bus_from_sync_context_does_not_raise(tmp_path: Path):
+    """If log_agent is called from a sync function with a bus attached,
+    _publish swallows the RuntimeError from asyncio.get_running_loop()
+    and the JSONL file is still written.
+    """
+    bus = JobEventBus()
+    logger = JobLogger("job-1", tmp_path, event_bus=bus)
+    logger.log_agent("dcf", _StubResult(cost=0.02))  # sync call, no event loop
+    assert (tmp_path / "job-1.jsonl").exists()
+    assert logger.total_cost_usd() == 0.02
