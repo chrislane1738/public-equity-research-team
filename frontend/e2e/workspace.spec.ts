@@ -3,6 +3,14 @@ import { test, expect } from "@playwright/test";
 test.describe("workspace", () => {
   // Block the live backend at the network layer for every test in this file.
   test.beforeEach(async ({ page }) => {
+    // Mock /healthz so the BackendStatusPill doesn't 404 in tests.
+    await page.route("**/healthz", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "ok" }),
+      }),
+    );
     await page.route("**/127.0.0.1:8001/**", (route) => {
       // Default to empty 200; specific tests will override with route.fulfill.
       const url = route.request().url();
@@ -11,6 +19,13 @@ test.describe("workspace", () => {
           status: 200,
           contentType: "application/json",
           body: JSON.stringify({ jobs: [] }),
+        });
+      }
+      if (url.endsWith("/healthz")) {
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ status: "ok" }),
         });
       }
       return route.fulfill({

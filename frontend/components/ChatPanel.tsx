@@ -7,6 +7,7 @@ import { openJobStream } from "@/lib/ws";
 import type { JobStreamHandle } from "@/lib/ws";
 import MdProgress from "./MdProgress";
 import FilePreviewPanel from "./FilePreviewPanel";
+import WorkflowButtons from "./WorkflowButtons";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { toast } from "sonner";
@@ -132,6 +133,7 @@ export default function ChatPanel() {
           </div>
         ))}
       </div>
+      <WorkflowButtons agentId={activeTabId} />
     </div>
   );
 }
