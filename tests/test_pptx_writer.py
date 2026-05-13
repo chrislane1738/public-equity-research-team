@@ -72,3 +72,27 @@ def test_write_pitch_deck_orders_slides_per_spec(tmp_path):
                 break
     expected_after_title = SLIDE_TITLES[1:]
     assert titles[:len(expected_after_title)] == expected_after_title
+
+
+def test_write_pitch_deck_handles_missing_chart_file(tmp_path):
+    """A chart_paths entry pointing to a nonexistent file must not abort the build."""
+    out = tmp_path / "pitch.pptx"
+    bogus = tmp_path / "does_not_exist.png"
+    write_pitch_deck(
+        path=out, ticker="NVDA", rating="Buy",
+        price_target=158.0, current_price=110.0,
+        slide_bodies={t: "x" for t in SLIDE_TITLES},
+        chart_paths={"DCF": bogus},
+    )
+    assert out.exists()
+    pres = Presentation(out)
+    assert len(pres.slides) == 14
+    # Find the DCF slide and confirm it contains a "[chart unavailable:" note.
+    dcf_slide = next(
+        s for s in list(pres.slides)[1:]
+        if s.shapes[0].text_frame.text == "DCF"
+    )
+    text = "\n".join(
+        sh.text_frame.text for sh in dcf_slide.shapes if sh.has_text_frame
+    )
+    assert "chart unavailable" in text

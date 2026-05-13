@@ -4,6 +4,7 @@ Slides 2-14 use a shared title-on-top + body-on-left + (optional) chart-on-right
 layout. The title slide leads with ticker · rating · PT · current price · upside %.
 """
 from pathlib import Path
+from typing import Any
 
 from pptx import Presentation
 from pptx.util import Inches, Pt
@@ -27,7 +28,7 @@ SLIDE_TITLES = [
 ]
 
 
-def _add_title_slide(pres, ticker: str, rating: str,
+def _add_title_slide(pres: Any, ticker: str, rating: str,
                      price_target: float, current_price: float) -> None:
     slide = pres.slides.add_slide(pres.slide_layouts[6])  # blank
     upside = (price_target - current_price) / current_price * 100 if current_price else 0
@@ -44,7 +45,7 @@ def _add_title_slide(pres, ticker: str, rating: str,
             run.font.bold = True
 
 
-def _add_body_slide(pres, title: str, body: str, chart_path: Path | None) -> None:
+def _add_body_slide(pres: Any, title: str, body: str, chart_path: Path | None) -> None:
     slide = pres.slides.add_slide(pres.slide_layouts[6])
 
     title_box = slide.shapes.add_textbox(Inches(0.4), Inches(0.3), Inches(9), Inches(0.8))
@@ -62,8 +63,17 @@ def _add_body_slide(pres, title: str, body: str, chart_path: Path | None) -> Non
             run.font.size = Pt(14)
 
     if chart_path:
-        slide.shapes.add_picture(str(chart_path), Inches(6.1), Inches(1.4),
-                                 width=Inches(3.6))
+        try:
+            slide.shapes.add_picture(str(chart_path), Inches(6.1), Inches(1.4),
+                                     width=Inches(3.6))
+        except FileNotFoundError:
+            # Chart promised by the caller but missing on disk — log via the
+            # body box and continue so the rest of the deck still ships.
+            note = body_box.text_frame.add_paragraph()
+            note.text = f"[chart unavailable: {Path(chart_path).name}]"
+            for run in note.runs:
+                run.font.italic = True
+                run.font.size = Pt(10)
 
 
 def write_pitch_deck(
