@@ -101,6 +101,18 @@ Add `.gitkeep` files (or commit a real file) to any directory the code expects t
 
 Harmless unused import. Plan B can clean it up if it touches `memo_builder.py` anyway.
 
+### 4.6 FMP retired `/api/v3` on 2025-08-31 — use `/stable/` with `?symbol=` query param
+
+Surfaced during the live smoke test. Plan A originally used `https://financialmodelingprep.com/api/v3/income-statement/NVDA` (path-style). FMP now returns HTTP 403 with a "Legacy Endpoint" message. Fixed in commit `c9ae468`: switched to `https://financialmodelingprep.com/stable/income-statement?symbol=NVDA&apikey=...`. Response JSON shape is unchanged (same `revenue`, `grossProfit`, etc. keys). The `/stable/` response now also includes a `cik` field — Plan B's FMP-based ticker→CIK lookup can read it directly from here instead of hitting `/profile`.
+
+### 4.7 `backend/main.py` needs `load_dotenv()` before the env-var guard
+
+Pydantic-settings reads `.env` only when `Settings()` is constructed, but the guard at `backend/main.py` checks `os.environ` directly at import time — so without an explicit `load_dotenv()` call the guard fails and `app` is never built. Fixed in commit `59eb9db`. If Plan B/C refactors this module, keep `_load_dotenv()` before the guard.
+
+### 4.8 Docker on the user's machine binds `:::8000` (IPv6) — use port 8001 or `127.0.0.1`
+
+The user runs a Docker container ("Stralane API") bound to `[::]:8000`. macOS prefers IPv6 when resolving `localhost`, so `curl http://localhost:8000/` hits Docker. Two workarounds: start uvicorn on a different port (e.g. 8001) or address via `127.0.0.1` explicitly. Plan D (launchers) should probably default to port 8001 to avoid the collision permanently.
+
 ## 5. ⚠️ Plan A → Plan B contract — read this before writing Plan B
 
 These are intentional simplifications in Plan A that Plan B will replace. Don't break them silently.
