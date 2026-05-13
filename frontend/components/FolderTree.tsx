@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import dynamic from "next/dynamic";
 import { useWorkspace } from "@/lib/store";
 import { api } from "@/lib/api";
 import {
@@ -11,13 +10,7 @@ import {
   File as FileIcon,
 } from "lucide-react";
 import type { FileNode } from "@/lib/types";
-
-// `ArtifactPreviewModal` transitively imports `react-pdf`, which uses
-// browser-only APIs (DOMMatrix). Loading it client-only avoids SSR errors
-// that would otherwise crash the workspace page.
-const ArtifactPreviewModal = dynamic(() => import("./ArtifactPreviewModal"), {
-  ssr: false,
-});
+import ArtifactPreviewModal from "./ArtifactPreviewModal";
 
 function Node({
   node,

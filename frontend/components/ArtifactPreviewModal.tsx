@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import {
   Dialog,
   DialogContent,
@@ -15,9 +16,17 @@ import JsonPreview from "./preview/JsonPreview";
 import ImagePreview from "./preview/ImagePreview";
 import XlsxPreview from "./preview/XlsxPreview";
 import DocxPreview from "./preview/DocxPreview";
-import PdfPreview from "./preview/PdfPreview";
 import PptxPreview from "./preview/PptxPreview";
 import UnknownPreview from "./preview/UnknownPreview";
+
+// PDF preview pulls in pdfjs-dist which references DOMMatrix at module-eval
+// time and breaks SSR. Defer loading to the client only.
+const PdfPreview = dynamic(() => import("./preview/PdfPreview"), {
+  ssr: false,
+  loading: () => (
+    <p className="text-sm text-muted-foreground">Loading PDF…</p>
+  ),
+});
 
 export interface PreviewProps {
   url: string;
