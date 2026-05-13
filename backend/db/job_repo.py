@@ -1,6 +1,6 @@
 """Async SQLite-backed JobState repository."""
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from backend.db.sqlite_client import SqliteClient
@@ -17,7 +17,7 @@ class JobRepo:
             "agents_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (job.id, job.ticker, job.workflow, job.status, job.current_stage,
              json.dumps(job.stages or {}),
-             (job.created_at or datetime.utcnow()).isoformat()),
+             (job.created_at or datetime.now(timezone.utc)).isoformat()),
         )
 
     async def update(
