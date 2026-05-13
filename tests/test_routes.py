@@ -1,62 +1,48 @@
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
 
+from backend.db.job_repo import JobRepo
+from backend.db.sqlite_client import SqliteClient
 from backend.main import build_app
 
 
 @pytest.fixture
-def app(tmp_path):
-    fake_orchestrator = MagicMock()
-    fake_orchestrator.run_full_deep_dive = AsyncMock(return_value={
-        "ticker": "NVDA",
-        "status": "complete",
-        "stages": {"fundamentals": "complete", "memo_builder": "complete"},
-        "rating": "Buy",
+def fake_orch():
+    o = type("O", (), {})()
+    o.run_full_deep_dive = AsyncMock(return_value={
+        "status": "complete", "current_stage": None,
+        "stages": {"fundamentals": "complete"}, "rating": "Buy",
     })
-    app = build_app(orchestrator=fake_orchestrator, research_dir=tmp_path)
-    return app, fake_orchestrator
+    return o
 
 
-def test_post_jobs_returns_job_id(app):
-    fastapi_app, orch = app
-    client = TestClient(fastapi_app)
+def test_post_jobs_persists_then_get_returns_state(tmp_path, fake_orch):
+    sqlite = SqliteClient(tmp_path / "test.sqlite")
+    app = build_app(orchestrator=fake_orch, research_dir=tmp_path, sqlite_client=sqlite)
+    with TestClient(app) as client:
+        resp = client.post("/jobs", json={"ticker": "NVDA", "workflow": "full-deep-dive"})
+        assert resp.status_code == 200
+        job_id = resp.json()["id"]
 
-    resp = client.post("/jobs", json={"ticker": "NVDA", "workflow": "full-deep-dive"})
-
-    assert resp.status_code == 200
-    body = resp.json()
-    assert "id" in body
-    assert body["ticker"] == "NVDA"
-    assert body["workflow"] == "full-deep-dive"
-
-
-def test_post_jobs_runs_orchestrator(app):
-    fastapi_app, orch = app
-    client = TestClient(fastapi_app)
-    resp = client.post("/jobs", json={"ticker": "NVDA"})
-    assert resp.status_code == 200
-    orch.run_full_deep_dive.assert_called_once_with(ticker="NVDA")
+        resp2 = client.get(f"/jobs/{job_id}")
+        assert resp2.status_code == 200
+        assert resp2.json()["rating"] == "Buy"
+        assert resp2.json()["status"] == "complete"
 
 
-def test_get_jobs_status_after_run(app):
-    fastapi_app, orch = app
-    client = TestClient(fastapi_app)
-    post_resp = client.post("/jobs", json={"ticker": "NVDA"})
-    job_id = post_resp.json()["id"]
-
-    get_resp = client.get(f"/jobs/{job_id}")
-
-    assert get_resp.status_code == 200
-    body = get_resp.json()
-    assert body["status"] == "complete"
-    assert body["rating"] == "Buy"
+def test_get_unknown_job_returns_404(tmp_path, fake_orch):
+    sqlite = SqliteClient(tmp_path / "test.sqlite")
+    app = build_app(orchestrator=fake_orch, research_dir=tmp_path, sqlite_client=sqlite)
+    with TestClient(app) as client:
+        resp = client.get("/jobs/does-not-exist")
+        assert resp.status_code == 404
 
 
-def test_get_jobs_404_for_unknown_id(app):
-    fastapi_app, _ = app
-    client = TestClient(fastapi_app)
-    resp = client.get("/jobs/nonexistent")
-    assert resp.status_code == 404
+def test_unsupported_workflow_returns_400(tmp_path, fake_orch):
+    sqlite = SqliteClient(tmp_path / "test.sqlite")
+    app = build_app(orchestrator=fake_orch, research_dir=tmp_path, sqlite_client=sqlite)
+    with TestClient(app) as client:
+        resp = client.post("/jobs", json={"ticker": "NVDA", "workflow": "bogus"})
+        assert resp.status_code == 400

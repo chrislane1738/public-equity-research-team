@@ -14,6 +14,7 @@ from docx import Document
 from fastapi.testclient import TestClient
 from httpx import AsyncClient, MockTransport, Response
 
+from backend.db.sqlite_client import SqliteClient
 from backend.main import build_app
 from backend.orchestrator import Orchestrator
 from backend.tools.edgar_client import EdgarClient
@@ -163,7 +164,8 @@ async def test_full_deep_dive_e2e_produces_memo_docx(tmp_path):
         settings=settings,
     )
 
-    app = build_app(orchestrator=orch, research_dir=tmp_path)
+    app = build_app(orchestrator=orch, research_dir=tmp_path,
+                    sqlite_client=SqliteClient(tmp_path / "test.sqlite"))
 
     # Patch AsyncClient to inject the respx router's mock transport for EDGAR calls.
     mock_transport = MockTransport(router.handler)
@@ -174,8 +176,8 @@ async def test_full_deep_dive_e2e_produces_memo_docx(tmp_path):
         _original_async_client_init(self_inner, *args, **kwargs)
 
     with patch.object(AsyncClient, "__init__", new=_patched_async_client_init):
-        client = TestClient(app)
-        resp = client.post("/jobs", json={"ticker": "NVDA", "workflow": "full-deep-dive"})
+        with TestClient(app) as client:
+            resp = client.post("/jobs", json={"ticker": "NVDA", "workflow": "full-deep-dive"})
 
     assert resp.status_code == 200, f"status={resp.status_code} body={resp.text!r}"
     body = resp.json()

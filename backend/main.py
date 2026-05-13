@@ -3,12 +3,25 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
+from backend.db.job_repo import JobRepo
+from backend.db.sqlite_client import SqliteClient
 from backend.routes.jobs import build_router
 
 
-def build_app(orchestrator, research_dir: Path) -> FastAPI:
+def build_app(orchestrator, research_dir: Path, sqlite_client) -> FastAPI:
     app = FastAPI(title="Public Equity Research Team — Backend")
-    app.include_router(build_router(orchestrator))
+    job_repo = JobRepo(sqlite_client)
+
+    @app.on_event("startup")
+    async def _on_startup():
+        await sqlite_client.connect()
+        await sqlite_client.init_schema()
+
+    @app.on_event("shutdown")
+    async def _on_shutdown():
+        await sqlite_client.close()
+
+    app.include_router(build_router(orchestrator, job_repo=job_repo))
 
     @app.get("/healthz")
     async def healthz():
@@ -51,7 +64,10 @@ def _build_default_app() -> FastAPI:
         research_dir=settings.research_dir, cik_resolver=cik_resolver,
         settings=settings,
     )
-    return build_app(orchestrator=orchestrator, research_dir=settings.research_dir)
+    sqlite = SqliteClient(settings.sqlite_path)
+    return build_app(orchestrator=orchestrator,
+                     research_dir=settings.research_dir,
+                     sqlite_client=sqlite)
 
 
 # uvicorn loads `app` at module import. Load .env first so the guard sees the
