@@ -117,3 +117,22 @@ class FmpClient:
         if not cached:
             raise RuntimeError("FMP treasury-rates empty")
         return float(cached[0]["year10"])
+
+    async def get_stock_list(self) -> list[dict[str, Any]]:
+        """24h-cached list of all FMP-tracked tickers.
+
+        FMP /stable/stock-list returns a flat list of {symbol, name, exchange, ...}.
+        Cached on disk because the list rarely changes intra-day and the call is large.
+        """
+        cache_file = self.cache_dir / "_STOCK_LIST.json"
+        cached = self._read_cache(cache_file)
+        if cached is None:
+            url = f"{BASE_URL}/stock-list"
+            async with httpx.AsyncClient(timeout=30.0) as http:
+                resp = await http.get(url, params={"apikey": self.api_key})
+                if resp.status_code != 200:
+                    raise RuntimeError(
+                        f"FMP stock-list failed: {resp.status_code} {resp.text}")
+                cached = resp.json()
+                cache_file.write_text(json.dumps(cached))
+        return list(cached) if cached else []

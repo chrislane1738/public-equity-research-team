@@ -11,6 +11,7 @@ from backend.job_runner import JobRunner
 from backend.observability.event_bus import JobEventBus
 from backend.routes.files import build_files_router
 from backend.routes.jobs import build_router
+from backend.routes.tickers_search import build_tickers_search_router
 
 
 def build_app(
@@ -45,6 +46,8 @@ def build_app(
     app.include_router(build_router(runner=runner, job_repo=job_repo,
                                     event_bus=bus))
     app.include_router(build_files_router(research_dir))
+    if fmp_client is not None:
+        app.include_router(build_tickers_search_router(fmp_client))
 
     @app.get("/healthz")
     async def healthz():
