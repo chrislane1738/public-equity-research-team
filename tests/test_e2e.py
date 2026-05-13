@@ -178,10 +178,22 @@ async def test_full_deep_dive_e2e_produces_memo_docx(tmp_path):
     with patch.object(AsyncClient, "__init__", new=_patched_async_client_init):
         with TestClient(app) as client:
             resp = client.post("/jobs", json={"ticker": "NVDA", "workflow": "full-deep-dive"})
+            assert resp.status_code == 202, f"status={resp.status_code} body={resp.text!r}"
+            job_id = resp.json()["job_id"]
 
-    assert resp.status_code == 200, f"status={resp.status_code} body={resp.text!r}"
-    body = resp.json()
-    assert body["status"] == "complete"
+            # Poll until terminal.
+            import time
+            deadline = time.monotonic() + 60.0
+            body = None
+            while time.monotonic() < deadline:
+                r = client.get(f"/jobs/{job_id}")
+                if r.status_code == 200 and r.json()["status"] in ("complete", "failed"):
+                    body = r.json()
+                    break
+                time.sleep(0.1)
+            assert body is not None, "job did not finish in 60s"
+
+    assert body["status"] == "complete", f"body={body!r}"
     assert body["rating"] == "Buy"
 
     ticker_dir = tmp_path / "NVDA"

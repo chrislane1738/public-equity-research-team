@@ -1,16 +1,36 @@
 """FastAPI application factory."""
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from backend.db.job_repo import JobRepo
 from backend.db.sqlite_client import SqliteClient
+from backend.job_runner import JobRunner
+from backend.observability.event_bus import JobEventBus
 from backend.routes.jobs import build_router
 
 
-def build_app(orchestrator, research_dir: Path, sqlite_client) -> FastAPI:
+def build_app(
+    orchestrator,
+    research_dir: Path,
+    sqlite_client,
+    event_bus: Optional[JobEventBus] = None,
+    fmp_client=None,
+) -> FastAPI:
     app = FastAPI(title="Public Equity Research Team — Backend")
+    bus = event_bus or JobEventBus()
     job_repo = JobRepo(sqlite_client)
+    runner = JobRunner(orchestrator, job_repo)
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["http://localhost:3000"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     @app.on_event("startup")
     async def _on_startup():
@@ -21,7 +41,8 @@ def build_app(orchestrator, research_dir: Path, sqlite_client) -> FastAPI:
     async def _on_shutdown():
         await sqlite_client.close()
 
-    app.include_router(build_router(orchestrator, job_repo=job_repo))
+    app.include_router(build_router(runner=runner, job_repo=job_repo,
+                                    event_bus=bus))
 
     @app.get("/healthz")
     async def healthz():
@@ -58,16 +79,19 @@ def _build_default_app() -> FastAPI:
                              cache_dir=settings.research_dir / "_fred_cache")
     cik_resolver = FmpProfileCikResolver(fmp_client)
 
+    bus = JobEventBus()
     orchestrator = Orchestrator(
         anthropic_client=anthropic_client, fmp_client=fmp_client,
         edgar_client=edgar_client, fred_client=fred_client,
         research_dir=settings.research_dir, cik_resolver=cik_resolver,
-        settings=settings,
+        settings=settings, event_bus=bus,
     )
     sqlite = SqliteClient(settings.sqlite_path)
     return build_app(orchestrator=orchestrator,
                      research_dir=settings.research_dir,
-                     sqlite_client=sqlite)
+                     sqlite_client=sqlite,
+                     event_bus=bus,
+                     fmp_client=fmp_client)
 
 
 # uvicorn loads `app` at module import. Load .env first so the guard sees the
