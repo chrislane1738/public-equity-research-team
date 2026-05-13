@@ -69,6 +69,10 @@ class CompsAgent:
         peer_symbols = await self.fmp.get_peers(ticker)
         all_symbols = [ticker.upper()] + [p.upper() for p in peer_symbols
                                           if p.upper() != ticker.upper()]
+        # TODO(perf): peer records fetch sequentially. asyncio.gather across
+        # peers would cut wall-clock by ~Nx for an N-peer set, but FMP's free
+        # tier has tight rate limits (~4 RPS); test with real keys before
+        # parallelising. Cache hits make repeat runs fast either way.
         records = [await self._peer_record(s) for s in all_symbols]
 
         summary = aggregate_peer_multiples(records)

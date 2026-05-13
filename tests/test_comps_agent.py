@@ -76,12 +76,19 @@ async def test_comps_writes_peer_multiples_and_comps_xlsx(tmp_path, mock_anthrop
     assert (ticker_dir / "comps" / "section.md").exists()
 
 
-async def test_comps_section_includes_peer_table_summary(tmp_path,
-                                                        mock_anthropic, mock_fmp):
+async def test_comps_prompt_includes_peer_records_and_aggregate(tmp_path,
+                                                                mock_anthropic, mock_fmp):
     ticker_dir = tmp_path / "NVDA"
     ticker_dir.mkdir()
     agent = CompsAgent(anthropic_client=mock_anthropic, fmp_client=mock_fmp,
                        model="claude-opus-4-7")
     await agent.run(ticker="NVDA", ticker_dir=ticker_dir)
-    body = (ticker_dir / "comps" / "section.md").read_text()
-    assert "Comps" in body
+
+    prompt = mock_anthropic.messages.create.call_args.kwargs["messages"][0]["content"]
+    assert "peer_records" in prompt
+    assert "aggregate" in prompt
+    assert '"NVDA"' in prompt
+    assert '"AMD"' in prompt
+    assert '"INTC"' in prompt
+    # The aggregate summary's median key should appear in the prompt body too.
+    assert "median" in prompt
