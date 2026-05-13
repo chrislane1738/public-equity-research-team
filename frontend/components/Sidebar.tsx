@@ -51,29 +51,36 @@ export default function Sidebar() {
   const selectTicker = useWorkspace((s) => s.selectTicker);
 
   useEffect(() => {
-    // Hydrate recent tickers from server.
-    api
-      .listJobs(20)
-      .then((jobs) => {
-        const seen = new Set<string>();
-        const recent: string[] = [];
-        for (const j of jobs) {
-          if (!seen.has(j.ticker)) {
-            seen.add(j.ticker);
-            recent.push(j.ticker);
-          }
-          if (recent.length === 5) break;
+    // Hydrate from BOTH the SQLite jobs index AND the on-disk RESEARCH_DIR.
+    // Filesystem is the source of truth for "what artifacts exist" — a job
+    // row may be missing if the DB was reset, but the artifacts persist.
+    Promise.all([
+      api.listJobs(20).catch(() => []),
+      api.listTickers().catch(() => []),
+    ]).then(([jobs, diskTickers]) => {
+      const order: string[] = [];
+      const seen = new Set<string>();
+      // Recent jobs first (preserves "most recently worked on" order).
+      for (const j of jobs) {
+        if (!seen.has(j.ticker)) {
+          seen.add(j.ticker);
+          order.push(j.ticker);
         }
-        if (recent.length) {
-          useWorkspace.setState((s) => ({
-            recentTickers: recent,
-            selectedTicker: s.selectedTicker ?? recent[0],
-          }));
+      }
+      // Then any tickers found on disk that the DB doesn't know about.
+      for (const t of diskTickers) {
+        if (!seen.has(t)) {
+          seen.add(t);
+          order.push(t);
         }
-      })
-      .catch(() => {
-        // Backend may not be reachable in static contexts (build, tests).
-      });
+      }
+      if (order.length) {
+        useWorkspace.setState((s) => ({
+          recentTickers: order,
+          selectedTicker: s.selectedTicker ?? order[0],
+        }));
+      }
+    });
   }, []);
 
   return (
