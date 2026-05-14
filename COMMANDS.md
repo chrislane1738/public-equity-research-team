@@ -3,18 +3,19 @@
 All workflows accept arguments inline (`/deep-dive NVDA`) and also work as
 natural-language prompts ("deep-dive on NVDA").
 
-## `/deep-dive <TICKER>` — Full Deep-Dive (~7 min)
+## `/deep-dive <TICKER>` — Full Deep-Dive (~8 min)
 
-Stages: fundamentals → 5 research pods in parallel → DCF (after comps) →
-synthesis → deck + memo in parallel → HTML rollup.
+Stages: accountant (filings audit) → fundamentals → 5 research pods in parallel
+→ DCF (after comps) → synthesis → deck + memo in parallel → HTML rollup.
 
 Outputs: every section.md + every artifact, plus `report.html`.
 
 Example: `/deep-dive NVDA`
 
-## `/earnings <TICKER>` — Earnings Update (~3 min)
+## `/earnings <TICKER>` — Earnings Update (~4 min)
 
-Stages: fundamentals (delta vs. prior quarter) → DCF + risk in parallel → memo.
+Stages: accountant (lightweight — downloads latest 8-K + earnings deck) →
+fundamentals (delta) → DCF + risk in parallel → memo.
 
 Outputs: minimal — `fundamentals/section.md`, `dcf/section.md`,
 `risk/section.md`, `reports/memo.docx`, `report.html`.

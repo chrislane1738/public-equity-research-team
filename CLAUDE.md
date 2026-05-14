@@ -10,10 +10,11 @@ Given a ticker (and optionally a workflow type), orchestrate the research desk
 to produce a single self-contained `report.html` plus companion .docx / .pptx /
 .xlsx artifacts under `~/Documents/equity-research/<TICKER>/`.
 
-## Available skills (in `.claude/skills/`)
+## Available skills (in `.claude/skills/`) — 13 skills
 
 | Skill | Role | Loaded as |
 |---|---|---|
+| `accountant` | SEC filings + FMP reconciliation + red-flag audit + earnings deck download | Subagent |
 | `fundamentals` | Three statements + 10-K + bespoke KPIs | Subagent |
 | `industry-moat` | Porter's 5 forces, moat verdict, peer-share dynamics | Subagent |
 | `dcf` | Wrapper around `financial-analysis:dcf-model` with Plan B framing | Subagent |
@@ -31,8 +32,8 @@ to produce a single self-contained `report.html` plus companion .docx / .pptx /
 
 | Command | Workflow | Wall-clock |
 |---|---|---|
-| `/deep-dive <TICKER>` | Full 10-agent deep-dive | ~7 min |
-| `/earnings <TICKER>` | Earnings-update (fundamentals delta → memo) | ~3 min |
+| `/deep-dive <TICKER>` | Full 10-agent deep-dive | ~8 min |
+| `/earnings <TICKER>` | Earnings-update (fundamentals delta → memo) | ~4 min |
 | `/morning <TICKER>` | Morning-note (quick fundamentals + synthesis) | ~1 min |
 | `/thesis <TICKER> "<question>"` | Targeted thesis check | varies |
 | `/sector <T1> <T2> ...` | Multi-ticker sector sweep | varies |
@@ -46,8 +47,10 @@ as `/deep-dive NVDA`.
 ## Concurrency
 
 The Agent tool supports parallel dispatch — dispatch multiple subagents in a
-single message for true parallel execution. Use this for Stage 2a research pods
-(5 concurrent) and Stage 4 production (2 concurrent).
+single message for true parallel execution. The `accountant` skill always runs
+first and sequentially (all other agents wait for it to complete); once it
+returns, use parallel dispatch for Stage 3 research pods (5 concurrent) and
+Stage 7 production (2 concurrent).
 
 ## Data sources
 
