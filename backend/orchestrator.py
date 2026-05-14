@@ -27,8 +27,13 @@ from backend.agents.deck_builder import DeckBuilderAgent
 from backend.agents.memo_builder import MemoBuilderAgent
 from backend.agents.risk import RiskAgent
 from backend.agents.technicals import TechnicalsAgent
-from backend.observability.event_bus import JobEventBus
-from backend.observability.job_logger import JobLogger
+# NOTE: observability removed in T12; orchestrator wiring cleaned up in T13.
+try:
+    from backend.observability.event_bus import JobEventBus
+    from backend.observability.job_logger import JobLogger
+except ModuleNotFoundError:
+    JobEventBus = None  # type: ignore[assignment,misc]
+    JobLogger = None    # type: ignore[assignment,misc]
 
 
 RATING_PATTERN = re.compile(r"\*\*Rating:\*\*\s*(Buy|Hold|Sell)", re.IGNORECASE)

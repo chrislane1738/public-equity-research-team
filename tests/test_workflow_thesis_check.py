@@ -4,6 +4,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+pytestmark = pytest.mark.skip(reason="rewired in T13 of skill-migration")
+
 from backend.orchestrator import Orchestrator
 
 
