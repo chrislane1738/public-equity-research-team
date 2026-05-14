@@ -56,33 +56,39 @@ data.
 
 ## Workflow
 
-1. **Read peer multiples** — load `~/Documents/equity-research/<TICKER>/comps/peer-multiples.json` if it exists.
-   Extract `peer_median_ev_ebitda` and `peer_p75_ev_ebitda`.
+1. **Read fundamentals' canonical data** — load `~/Documents/equity-research/<TICKER>/fundamentals/financials.json`. Use the `ttm.*`, `live_quote.*`, and `latest_quarter.*` fields as your base year — never re-pull from FMP and never use FMP's `key-metrics`/`ratios` fields. If fundamentals didn't produce `ttm.*` or `latest_quarter.*`, stop and flag — fundamentals must run first.
 
-2. **Fallback** — if the file is absent (earnings-update workflow where comps haven't run), set
-   `exit_multiple = 12.0` and note in the narrative: "Peer multiples unavailable — using 12× EV/EBITDA floor."
+2. **Read peer multiples** — load `~/Documents/equity-research/<TICKER>/comps/peer-multiples.json` if it exists. Extract `peer_median_ev_ebitda` and `peer_p75_ev_ebitda`. Trust these values — the comps skill is contractually obligated to compute them manually from raw statements + live quote.
 
-3. **Apply haircut** — compute:
+3. **Fallback** — if the comps file is absent (earnings-update workflow where comps haven't run), set `exit_multiple = 12.0` and note in the narrative: *"Peer multiples unavailable — using 12× EV/EBITDA floor."*
+
+4. **Apply haircut** — compute:
    ```python
    effective_exit_multiple = min(peer_median_ev_ebitda, peer_p75_ev_ebitda * 0.85)
    ```
    Log whether the p75 cap triggered.
 
-4. **Fetch market inputs** — retrieve current beta via `MarketData.get_beta(ticker)` and
-   10Y UST via `MarketData.get_fred("DGS10")`.
+5. **Compute WACC inputs manually** — do NOT use FMP's `key-metrics` endpoints for any of these:
+   - **Beta**: pull from `MarketData.get_profile(ticker).beta` (FMP profile beta is acceptable since it's a raw market-derived number, not a ratio). Cross-check against a 2-year regression vs. SPY if available.
+   - **Risk-free rate**: 10Y UST from FRED (`DGS10`).
+   - **ERP**: 5.5% default (or whatever the ASSUMPTIONS_PROMPT recommends).
+   - **Cost of debt**: TTM interest expense (sum of last 4 quarters from `income-statement-quarterly`) ÷ average total debt (most-recent + prior-year balance-sheet `longTermDebt + shortTermDebt`). Do NOT use `key-metrics.interestCoverage` or any FMP-computed cost-of-debt field.
+   - **Tax rate**: 5-year average effective rate from raw `income-statement` (tax_expense / pre_tax_income), capped at 21%, excluding loss years. Manually computed.
+   - **D/E weights**: equity = current market cap (live `quote.price × quote.sharesOutstanding`); debt = current `longTermDebt + shortTermDebt`. Compute weights as ratios.
 
-5. **Run ASSUMPTIONS_PROMPT** — use the ASSUMPTIONS_PROMPT above (verbatim), supplying headline
-   financials, the effective_exit_multiple as peer_median_ev_ebitda, and the 10Y UST.
+6. **Base-year financials for projection** — use the TTM figures from `fundamentals/financials.json` as the projection base, NOT the most recent annual filing. Note in the narrative: *"Base year: TTM ending [latest_quarter.report_date], revenue $X (vs. last annual FY[YY] $Y)."*
 
-6. **Dispatch off-the-shelf skill** — invoke `financial-analysis:dcf-model` via the Skill tool with:
+7. **Run ASSUMPTIONS_PROMPT** — use the ASSUMPTIONS_PROMPT above (verbatim), supplying TTM financials, the effective_exit_multiple, and the 10Y UST.
+
+8. **Dispatch off-the-shelf skill (optional)** — invoke `financial-analysis:dcf-model` via the Skill tool with:
    - ticker
    - data directory: `~/Documents/equity-research/<TICKER>/`
-   - exit_multiple override (from step 3)
+   - exit_multiple override (from step 4)
    - sector_cap = peer_p75_ev_ebitda (or None if fallback)
    - output paths: `dcf/dcf.xlsx`, `dcf/football-field.png`, `dcf/sensitivity.png`
+   - manually computed WACC inputs from step 5 (pass through — do not let the off-the-shelf skill recompute from FMP fields)
 
-7. **Write narrative** — apply PROSE_PROMPT (verbatim above) to generate `dcf/section.md`.
-   Explicitly state whether the p75 cap triggered and which fallback mode was used.
+9. **Write narrative** — apply PROSE_PROMPT (verbatim above) to generate `dcf/section.md`. Explicitly state: (a) the TTM base year and most recent quarter, (b) the manually computed WACC components, (c) whether the p75 cap triggered, (d) which fallback mode was used. Cite the source of every input.
 
 ## Output
 
