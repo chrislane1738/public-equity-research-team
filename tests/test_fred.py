@@ -2,7 +2,7 @@ import pytest
 import respx
 from httpx import Response
 
-from backend.tools.fred_client import FredClient
+from tools.fred import FredClient
 
 
 @pytest.fixture
