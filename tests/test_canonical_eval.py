@@ -5,7 +5,10 @@ import pytest
 
 pytestmark = pytest.mark.skip(reason="rewired in T16 of skill-migration")
 
-from backend.orchestrator import Orchestrator
+try:
+    from backend.orchestrator import Orchestrator
+except ModuleNotFoundError:
+    Orchestrator = None  # type: ignore[assignment,misc]
 from tests.conftest_canonical import (build_fixture_edgar, build_fixture_fmp,
                                        build_fixture_fred, load)
 
