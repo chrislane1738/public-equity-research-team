@@ -4,7 +4,7 @@ import pytest
 import respx
 from httpx import Response
 
-from backend.tools.edgar_client import EdgarClient
+from tools.edgar import EdgarClient
 
 
 FIXTURE_HTML = (Path(__file__).parent / "fixtures" / "edgar_nvda_10k.html").read_text()
