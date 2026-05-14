@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-from backend.tools.multiples import (
+from tools.multiples import (
     enterprise_value,
     ev_to_ebitda,
     pe_ratio,
