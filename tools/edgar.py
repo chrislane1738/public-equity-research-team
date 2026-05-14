@@ -1,40 +1,273 @@
-"""SEC EDGAR client + 10-K section extractor.
+"""SEC EDGAR client + filing section extractor.
 
-Extracts only Item 1 (Business), Item 1A (Risk Factors), and Item 7 (MD&A).
+Public methods
+--------------
+fetch_10k_excerpt       — (existing) fetch latest 10-K and return key sections
+get_company_submissions — fetch submissions JSON for a CIK
+get_company_facts       — fetch XBRL companyfacts JSON for a CIK
+list_filings            — convenience wrapper; returns filtered filing list
+download_filing_document — download a single filing document to disk
+extract_filing_section  — parse Item sections from a 10-K/10-Q HTML string
 """
+import json
 import re
+import time
 import warnings
-from typing import Optional
+from pathlib import Path
+from typing import Any, Optional
 
 import httpx
 from bs4 import BeautifulSoup
 
 
-KEEP_ITEMS = [
-    ("Item 1.", "Item 1A."),     # Business → up to Risk Factors
-    ("Item 1A.", "Item 1B."),    # Risk Factors → up to Unresolved
-    ("Item 7.", "Item 7A."),     # MD&A → up to Market Risk
-]
+DAILY_TTL_SECONDS = 24 * 60 * 60
+
+# Section markers: maps section_id → (start patterns, stop-at-any-of patterns)
+# Each pattern set is tried with a case-insensitive regex.
+_SECTION_MARKERS: dict[str, tuple[list[str], list[str]]] = {
+    "business":          (["Item\\s+1\\.(?!A)"],       ["Item\\s+1A\\.", "Item\\s+2\\."]),
+    "risk_factors":      (["Item\\s+1A\\."],             ["Item\\s+1B\\.", "Item\\s+2\\."]),
+    "properties":        (["Item\\s+2\\."],              ["Item\\s+3\\."]),
+    "legal_proceedings": (["Item\\s+3\\."],              ["Item\\s+4\\."]),
+    "mda":               (["Item\\s+7\\.(?!A)"],         ["Item\\s+7A\\.", "Item\\s+8\\."]),
+    "financial_statements": (["Item\\s+8\\."],           ["Item\\s+9\\."]),
+}
+
+_MAX_SECTION_CHARS = 50_000
 
 
 class EdgarClient:
-    BASE = "https://data.sec.gov"
+    BASE_DATA = "https://data.sec.gov"
+    BASE_ARCHIVES = "https://www.sec.gov/Archives/edgar/data"
 
-    def __init__(self, user_agent: str):
-        # SEC requires a contact-info User-Agent. Default headers reused per request.
+    def __init__(self, user_agent: str, cache_dir: Optional[Path] = None):
+        # SEC requires a contact-info User-Agent.
         self.headers = {"User-Agent": user_agent, "Accept": "application/json"}
+        if cache_dir is None:
+            from tools.settings import CACHE_DIR
+            cache_dir = CACHE_DIR
+        self.cache_dir = Path(cache_dir)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+    # ------------------------------------------------------------------
+    # Cache helpers (same pattern as FredClient / FmpClient)
+    # ------------------------------------------------------------------
+
+    def _cache_path(self, key: str) -> Path:
+        safe = re.sub(r"[^A-Za-z0-9_\-]", "_", key)
+        return self.cache_dir / f"_EDGAR_{safe}.json"
+
+    def _read_cache(self, path: Path) -> Any | None:
+        if not path.exists():
+            return None
+        if (time.time() - path.stat().st_mtime) > DAILY_TTL_SECONDS:
+            return None
+        return json.loads(path.read_text())
+
+    def _write_cache(self, path: Path, data: Any) -> None:
+        path.write_text(json.dumps(data))
+
+    # ------------------------------------------------------------------
+    # 2.1 — Submissions
+    # ------------------------------------------------------------------
+
+    async def get_company_submissions(self, cik: str) -> dict:
+        """Return the SEC submissions JSON for a CIK (zero-padded to 10 digits)."""
+        cik_padded = cik.zfill(10)
+        cache_file = self._cache_path(f"submissions_{cik_padded}")
+        cached = self._read_cache(cache_file)
+        if cached is not None:
+            return cached
+        url = f"{self.BASE_DATA}/submissions/CIK{cik_padded}.json"
+        async with httpx.AsyncClient(timeout=30.0, headers=self.headers) as http:
+            resp = await http.get(url)
+            resp.raise_for_status()
+            data = resp.json()
+        self._write_cache(cache_file, data)
+        return data
+
+    # ------------------------------------------------------------------
+    # 2.2 — Company facts (XBRL)
+    # ------------------------------------------------------------------
+
+    async def get_company_facts(self, cik: str) -> dict:
+        """Return the XBRL companyfacts JSON for a CIK."""
+        cik_padded = cik.zfill(10)
+        cache_file = self._cache_path(f"companyfacts_{cik_padded}")
+        cached = self._read_cache(cache_file)
+        if cached is not None:
+            return cached
+        url = f"{self.BASE_DATA}/api/xbrl/companyfacts/CIK{cik_padded}.json"
+        async with httpx.AsyncClient(timeout=60.0, headers=self.headers) as http:
+            resp = await http.get(url)
+            resp.raise_for_status()
+            data = resp.json()
+        self._write_cache(cache_file, data)
+        return data
+
+    # ------------------------------------------------------------------
+    # 2.3 — List filings (convenience wrapper)
+    # ------------------------------------------------------------------
+
+    async def list_filings(
+        self,
+        cik: str,
+        form_types: list[str] | None = None,
+        limit: int = 10,
+    ) -> list[dict]:
+        """Return recent filings, optionally filtered by form type, capped at limit."""
+        submissions = await self.get_company_submissions(cik)
+        recent = submissions["filings"]["recent"]
+
+        forms        = recent.get("form", [])
+        accessions   = recent.get("accessionNumber", [])
+        filing_dates = recent.get("filingDate", [])
+        report_dates = recent.get("reportDate", [])
+        primary_docs = recent.get("primaryDocument", [])
+        descriptions = recent.get("primaryDocDescription", [])
+
+        results: list[dict] = []
+        for i, form in enumerate(forms):
+            if form_types is not None and form not in form_types:
+                continue
+            results.append({
+                "accession_number":  accessions[i]   if i < len(accessions)   else "",
+                "form":              form,
+                "filing_date":       filing_dates[i]  if i < len(filing_dates) else "",
+                "report_date":       report_dates[i]  if i < len(report_dates) else "",
+                "primary_document":  primary_docs[i]  if i < len(primary_docs) else "",
+                "description":       descriptions[i]  if i < len(descriptions) else "",
+            })
+            if len(results) >= limit:
+                break
+        return results
+
+    # ------------------------------------------------------------------
+    # 2.4 — Download a filing document to disk
+    # ------------------------------------------------------------------
+
+    async def download_filing_document(
+        self,
+        cik: str,
+        accession_number: str,
+        primary_document: str,
+        output_path: Path,
+    ) -> Path:
+        """Download a filing document and write it to output_path.
+
+        accession_number may include dashes (e.g. '0001045810-24-000029'); they
+        are stripped for the URL path.
+        """
+        cik_int = str(int(cik.lstrip("0") or "0"))
+        accession_no_dashes = accession_number.replace("-", "")
+        url = f"{self.BASE_ARCHIVES}/{cik_int}/{accession_no_dashes}/{primary_document}"
+
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Use application/octet-stream accept so the server returns raw bytes
+        dl_headers = {**self.headers, "Accept": "application/octet-stream, */*"}
+        async with httpx.AsyncClient(timeout=60.0, headers=dl_headers) as http:
+            resp = await http.get(url)
+            resp.raise_for_status()
+            output_path.write_bytes(resp.content)
+        return output_path
+
+    # ------------------------------------------------------------------
+    # 2.5 — Extract a named section from 10-K/10-Q HTML
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def extract_filing_section(filing_html: str, section_id: str) -> str:
+        """Extract a named section from 10-K/10-Q HTML.
+
+        section_id must be one of: business, risk_factors, mda,
+        financial_statements, properties, legal_proceedings.
+
+        Returns plain text (HTML tags stripped), capped at 50 000 chars.
+        """
+        if section_id not in _SECTION_MARKERS:
+            raise ValueError(
+                f"Unknown section_id {section_id!r}. "
+                f"Valid: {list(_SECTION_MARKERS)}"
+            )
+        start_patterns, stop_patterns = _SECTION_MARKERS[section_id]
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            soup = BeautifulSoup(filing_html, "lxml")
+
+        # Collect all candidate heading elements
+        candidate_tags = soup.find_all(["h1", "h2", "h3", "b", "span", "p"])
+
+        def _text_of(tag) -> str:
+            return tag.get_text(" ", strip=True)
+
+        def _matches_any(text: str, patterns: list[str]) -> bool:
+            for pat in patterns:
+                if re.search(pat, text, re.IGNORECASE):
+                    return True
+            return False
+
+        # Find the index of the first element that matches a start pattern
+        start_idx = None
+        for idx, tag in enumerate(candidate_tags):
+            txt = _text_of(tag)
+            if _matches_any(txt, start_patterns):
+                start_idx = idx
+                break
+
+        if start_idx is None:
+            return ""
+
+        # Collect text until we hit a stop pattern
+        collected: list[str] = []
+        for tag in candidate_tags[start_idx:]:
+            txt = _text_of(tag)
+            if tag is not candidate_tags[start_idx] and _matches_any(txt, stop_patterns):
+                break
+            # Use the tag's get_text with newline separator for paragraph breaks
+            para = tag.get_text("\n", strip=True)
+            if para:
+                collected.append(para)
+
+        result = "\n\n".join(collected)
+        return result[:_MAX_SECTION_CHARS]
+
+    # ------------------------------------------------------------------
+    # Existing public API — fetch_10k_excerpt (bug-fixed)
+    # ------------------------------------------------------------------
 
     async def fetch_10k_excerpt(self, ticker: str, cik: str) -> str:
+        """Fetch the latest 10-K for ticker/cik and return key sections.
+
+        Returns Business, Risk Factors, and MD&A sections separated by ---
+        delimiters.  Uses extract_filing_section internally (fixes the
+        uppercase ITEM 7. parser bug that existed in the old _extract_sections
+        implementation).
+        """
         cik_padded = cik.zfill(10)
         async with httpx.AsyncClient(timeout=30.0, headers=self.headers) as http:
             submissions = await self._fetch_submissions(http, cik_padded)
             doc_url = self._latest_10k_url(submissions, cik_padded)
             resp = await http.get(doc_url)
             resp.raise_for_status()
-            return self._extract_sections(resp.text)
+            html = resp.text
+
+        wanted = ["business", "risk_factors", "mda"]
+        chunks: list[str] = []
+        for section_id in wanted:
+            section_text = self.extract_filing_section(html, section_id)
+            if section_text:
+                chunks.append(section_text.strip())
+        return "\n\n---\n\n".join(chunks)
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
 
     async def _fetch_submissions(self, http: httpx.AsyncClient, cik_padded: str) -> dict:
-        url = f"{self.BASE}/submissions/CIK{cik_padded}.json"
+        url = f"{self.BASE_DATA}/submissions/CIK{cik_padded}.json"
         resp = await http.get(url)
         resp.raise_for_status()
         return resp.json()
@@ -49,26 +282,3 @@ class EdgarClient:
                 cik_int = str(int(cik_padded))
                 return f"https://www.sec.gov/Archives/edgar/data/{cik_int}/{accession}/{doc}"
         raise RuntimeError("No 10-K found in recent filings")
-
-    @staticmethod
-    def _extract_sections(html: str) -> str:
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", DeprecationWarning)
-            soup = BeautifulSoup(html, "lxml")
-        text = soup.get_text("\n")
-        kept_chunks: list[str] = []
-        for start_marker, end_marker in KEEP_ITEMS:
-            chunk = EdgarClient._slice_between(text, start_marker, end_marker)
-            if chunk:
-                kept_chunks.append(chunk.strip())
-        return "\n\n---\n\n".join(kept_chunks)
-
-    @staticmethod
-    def _slice_between(text: str, start: str, end: str) -> Optional[str]:
-        pat = re.compile(
-            re.escape(start) + r"(.*?)" + re.escape(end), re.DOTALL | re.IGNORECASE
-        )
-        m = pat.search(text)
-        if not m:
-            return None
-        return start + m.group(1)
