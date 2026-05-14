@@ -165,10 +165,10 @@ def normalize_profile(raw: dict) -> Profile:
         "industry": raw.get("industry", ""),
         "sector": raw.get("sector", ""),
         "sic_code": str(raw.get("sicCode", "") or ""),
-        "market_cap": float(raw.get("mktCap", 0) or 0),
+        "market_cap": float(raw.get("marketCap", raw.get("mktCap", 0)) or 0),
         "beta": float(raw.get("beta", 0) or 0),
         "description": raw.get("description", ""),
-        "exchange": raw.get("exchangeShortName", ""),
+        "exchange": raw.get("exchange", raw.get("exchangeShortName", "")),
     }
 
 
