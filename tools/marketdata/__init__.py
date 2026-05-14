@@ -1,4 +1,5 @@
 """MarketData — FMP primary, yfinance fallback. Normalized shapes per interface.py."""
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -29,7 +30,7 @@ class MarketData:
 
     def get_profile(self, ticker: str) -> Profile:
         if self.fmp is not None:
-            result = self.fmp.get_profile(ticker)
+            result = asyncio.run(self.fmp.get_profile(ticker))
             if result:
                 return result
         if self.yfinance is not None:
@@ -38,7 +39,7 @@ class MarketData:
 
     def get_quote(self, ticker: str) -> Quote:
         if self.fmp is not None:
-            result = self.fmp.get_quote(ticker)
+            result = asyncio.run(self.fmp.get_quote(ticker))
             if result:
                 return result
         if self.yfinance is not None:
@@ -47,7 +48,7 @@ class MarketData:
 
     def get_historical_prices(self, ticker: str, period: str = "1y") -> list[HistoricalBar]:
         if self.fmp is not None:
-            result = self.fmp.get_historical_prices(ticker, period=period)
+            result = asyncio.run(self.fmp.get_historical_prices(ticker, period=period))
             if result:
                 return result
         if self.yfinance is not None:
@@ -58,10 +59,8 @@ class MarketData:
         """FMP-only — yfinance has no peers endpoint."""
         if self.fmp is None:
             return []
-        return self.fmp.get_peers(ticker)
+        return asyncio.run(self.fmp.get_peers(ticker))
 
     def screen(self, **criteria: Any) -> list[ScreenResult]:
-        """FMP-only — yfinance has no screener endpoint."""
-        if self.fmp is None:
-            return []
-        return self.fmp.screen(**criteria)
+        """FMP-only — yfinance has no screener endpoint. FmpClient.screen not yet implemented."""
+        return []

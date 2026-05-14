@@ -1,5 +1,5 @@
 """MarketData abstraction — FMP primary, yfinance fallback, normalized shapes."""
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -70,7 +70,7 @@ def test_yfinance_get_historical_prices_returns_normalized_bars(mock_yf):
 
 
 def test_market_data_falls_back_to_yfinance_when_fmp_returns_empty():
-    fmp = MagicMock()
+    fmp = AsyncMock()
     fmp.get_profile.return_value = {}
     yf = MagicMock()
     yf.get_profile.return_value = {"symbol": "NVDA", "company_name": "NVIDIA"}
@@ -84,7 +84,7 @@ def test_market_data_falls_back_to_yfinance_when_fmp_returns_empty():
 
 
 def test_market_data_uses_fmp_when_available():
-    fmp = MagicMock()
+    fmp = AsyncMock()
     fmp.get_profile.return_value = {"symbol": "NVDA", "company_name": "NVIDIA (FMP)"}
     yf = MagicMock()
 
