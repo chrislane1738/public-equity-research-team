@@ -1,13 +1,13 @@
 ---
 name: screen
-description: Use for stock screens or thematic idea generation — wraps off-the-shelf equity-research:idea-generation. Uses FMP screener as the primary filter and WebSearch for thematic searches. Returns ranked candidates with one-line theses.
+description: Use for stock screens or thematic idea generation — wraps off-the-shelf equity-research:screen. Uses FMP screener as the primary filter and WebSearch for thematic searches. Returns ranked candidates with one-line theses.
 ---
 
 # Screen — Stock Idea Generation
 
 ## Tools You Will Use
 
-- **Skill tool** — dispatches `equity-research:idea-generation` for the one-line-thesis layer
+- **Skill tool** — dispatches `equity-research:screen` for the one-line-thesis layer
 - **`MarketData`** — `screen(...)` for numeric filters
 - **WebSearch** — thematic searches (see hardening section below)
 - **WebFetch** — follow links from WebSearch results for deeper context
@@ -38,7 +38,7 @@ market cap > $2B"). Proceed to Step 2a.
 
 ### Step 3 — Dispatch Off-the-Shelf Skill
 
-Invoke `equity-research:idea-generation` via the Skill tool, passing the top-15 candidate
+Invoke `equity-research:screen` via the Skill tool, passing the top-15 candidate
 list. The off-the-shelf skill generates a one-line investment thesis for each candidate.
 
 ### Step 4 — Return Ranked Output
