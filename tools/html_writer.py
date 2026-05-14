@@ -1,0 +1,133 @@
+"""Assemble a single self-contained HTML report for a ticker.
+
+Deterministic templating — no LLM call. Inputs: per-pod section.md files + PNG
+charts on disk. Output: <TICKER>/report.html with inline CSS, base64-embedded
+images, and relative-path links to companion .docx/.pptx/.xlsx artifacts.
+
+Self-contained: open in any browser, including offline. Print-friendly via
+@media print.
+"""
+import base64
+import re
+from pathlib import Path
+
+import markdown
+
+
+SECTION_ORDER = [
+    ("synthesis", "Executive Summary", "_synthesis.md"),
+    ("fundamentals", "Fundamentals", "section.md"),
+    ("industry", "Industry & Moat", "section.md"),
+    ("dcf", "DCF Valuation", "section.md"),
+    ("comps", "Trading Comps", "section.md"),
+    ("macro", "Macro & Catalysts", "section.md"),
+    ("risk", "Risks & Upside", "section.md"),
+    ("technicals", "Technicals", "section.md"),
+]
+
+
+COMPANION_LINKS = [
+    ("reports/memo.docx", "Memo (.docx)"),
+    ("reports/pitch.pptx", "Pitch Deck (.pptx)"),
+    ("reports/onepager.pdf", "One-Pager (.pdf)"),
+    ("dcf/dcf.xlsx", "DCF Model (.xlsx)"),
+    ("comps/comps.xlsx", "Comps Model (.xlsx)"),
+]
+
+
+CSS = """
+:root { --fg: #1a1a1a; --muted: #666; --accent: #1e40af; --bg: #fff; --rule: #e5e7eb; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+       max-width: 860px; margin: 2em auto; padding: 0 1.5em; color: var(--fg); background: var(--bg);
+       line-height: 1.55; font-size: 16px; }
+h1, h2, h3 { color: var(--fg); margin-top: 1.5em; }
+h1 { border-bottom: 2px solid var(--accent); padding-bottom: 0.3em; }
+h2 { border-bottom: 1px solid var(--rule); padding-bottom: 0.2em; margin-top: 2em; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code { background: #f3f4f6; padding: 0.1em 0.3em; border-radius: 3px; font-size: 0.92em; }
+table { border-collapse: collapse; margin: 1em 0; }
+th, td { border: 1px solid var(--rule); padding: 0.5em 0.8em; text-align: left; }
+th { background: #f9fafb; }
+img { max-width: 100%; height: auto; margin: 1em 0; }
+.companion { background: #f9fafb; padding: 1em 1.2em; border-left: 3px solid var(--accent);
+             margin: 2em 0; border-radius: 4px; }
+.companion ul { margin: 0.3em 0 0 0; padding-left: 1.4em; }
+.section { margin-bottom: 2em; }
+.muted { color: var(--muted); font-size: 0.92em; }
+.placeholder { color: var(--muted); font-style: italic; }
+
+@media print {
+    body { max-width: none; margin: 0; padding: 1em; font-size: 11pt; }
+    h2 { page-break-after: avoid; }
+    .companion { display: none; }
+}
+"""
+
+
+def encode_image_as_data_uri(path: Path) -> str:
+    """Read a PNG (or any image) and return its data: URI. Empty string if missing."""
+    if not path.exists() or not path.is_file():
+        return ""
+    suffix = path.suffix.lower().lstrip(".")
+    mime = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "svg": "image/svg+xml"}.get(
+        suffix, "application/octet-stream"
+    )
+    data = base64.b64encode(path.read_bytes()).decode("ascii")
+    return f"data:{mime};base64,{data}"
+
+
+def render_section(section_path: Path) -> str:
+    """Render a section.md to HTML. Returns a placeholder if the file is missing."""
+    if not section_path.exists():
+        return '<p class="placeholder">Section not produced — see logs.</p>'
+    md_text = section_path.read_text()
+    return markdown.markdown(md_text, extensions=["tables", "fenced_code"])
+
+
+def _inline_images(html: str, section_dir: Path) -> str:
+    """Replace <img src="rel.png"> with data: URIs sourced from section_dir."""
+    def replace(match: re.Match) -> str:
+        src = match.group(1)
+        if src.startswith(("http://", "https://", "data:")):
+            return match.group(0)
+        uri = encode_image_as_data_uri(section_dir / src)
+        if not uri:
+            return match.group(0)
+        return match.group(0).replace(f'src="{src}"', f'src="{uri}"')
+
+    return re.sub(r'<img\s+[^>]*src="([^"]+)"[^>]*>', replace, html)
+
+
+def write_report_html(ticker_dir: Path, ticker: str) -> Path:
+    """Assemble <ticker_dir>/report.html and return its path."""
+    ticker_dir = Path(ticker_dir)
+    parts: list = []
+    parts.append(f"<!DOCTYPE html>\n<html lang='en'>\n<head>")
+    parts.append(f"<meta charset='utf-8'>")
+    parts.append(f"<title>{ticker} — Equity Research Report</title>")
+    parts.append(f"<style>{CSS}</style>")
+    parts.append("</head>\n<body>")
+    parts.append(f"<h1>{ticker} — Equity Research Report</h1>")
+
+    # Companion links (only those present)
+    companion_present = [(rel, label) for rel, label in COMPANION_LINKS if (ticker_dir / rel).exists()]
+    if companion_present:
+        parts.append('<div class="companion"><strong>Companion artifacts</strong><ul>')
+        for rel, label in companion_present:
+            parts.append(f'<li><a href="{rel}">{label}</a></li>')
+        parts.append("</ul></div>")
+
+    for pod, heading, filename in SECTION_ORDER:
+        section_path = ticker_dir / pod / filename
+        section_html = render_section(section_path)
+        section_html = _inline_images(section_html, ticker_dir / pod)
+        parts.append(f'<section class="section" id="{pod}">')
+        parts.append(f"<h2>{heading}</h2>")
+        parts.append(section_html)
+        parts.append("</section>")
+
+    parts.append("</body>\n</html>\n")
+    out = ticker_dir / "report.html"
+    out.write_text("\n".join(parts))
+    return out
