@@ -3,7 +3,7 @@ from pathlib import Path
 import matplotlib
 matplotlib.use("Agg")  # headless
 
-from backend.tools.charts import (
+from tools.charts import (
     peer_share_chart,
     box_plot,
     football_field,
