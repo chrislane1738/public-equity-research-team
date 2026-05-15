@@ -2,13 +2,17 @@
 
 Public methods
 --------------
+lookup_cik              — resolve ticker → 10-digit CIK via SEC's official mapping
 fetch_10k_excerpt       — (existing) fetch latest 10-K and return key sections
 get_company_submissions — fetch submissions JSON for a CIK
 get_company_facts       — fetch XBRL companyfacts JSON for a CIK
 list_filings            — convenience wrapper; returns filtered filing list
 download_filing_document — download a single filing document to disk
 extract_filing_section  — parse Item sections from a 10-K/10-Q HTML string
+extract_filing_section_pdf — same but for PDF-format filings (pypdf-based)
+extract_filing_section_auto — auto-dispatch by file extension (.htm/.html/.pdf)
 """
+import html as _html
 import json
 import re
 import time
@@ -18,6 +22,20 @@ from typing import Any, Optional
 
 import httpx
 from bs4 import BeautifulSoup
+
+
+def _normalize_item_markers(text: str) -> str:
+    """Normalize legacy 10-K/10-Q section markers so the standard regex matches.
+
+    Handles three edge cases observed in legacy filers:
+    1. HTML entities still present (&#167; → §, &nbsp; → \\xa0, etc.).
+    2. Non-standard whitespace inside markers (Item\\xa07. or Item\\u202f7.).
+    3. § used in place of "Item" (e.g., "§ 7. Management's Discussion").
+    """
+    text = _html.unescape(text)
+    text = re.sub(r"[\xa0   ]", " ", text)
+    text = re.sub(r"§\s*(\d+[A-Z]?)\.?", r"Item \1.", text)
+    return text
 
 
 DAILY_TTL_SECONDS = 24 * 60 * 60
@@ -224,6 +242,9 @@ class EdgarClient:
             )
         start_patterns, stop_patterns = _SECTION_MARKERS[section_id]
 
+        # Normalize legacy markers (HTML entities, nbsp, § notation) before parsing.
+        filing_html = _normalize_item_markers(filing_html)
+
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)
             soup = BeautifulSoup(filing_html, "lxml")
@@ -264,6 +285,83 @@ class EdgarClient:
 
         result = "\n\n".join(collected)
         return result[:_MAX_SECTION_CHARS]
+
+    # ------------------------------------------------------------------
+    # 2.6 — PDF section extractor (for native-PDF 10-K filings)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def extract_filing_section_pdf(pdf_path: Path, section_id: str) -> str:
+        """Extract a named section from a PDF-format 10-K/10-Q filing.
+
+        Same section_id values as extract_filing_section. Uses pypdf to pull
+        plain text from every page, normalizes legacy item markers, then runs
+        the same start/stop pattern matching as the HTML extractor.
+
+        Useful for foreign private issuers and amendments filed as PDF.
+        """
+        if section_id not in _SECTION_MARKERS:
+            raise ValueError(
+                f"Unknown section_id {section_id!r}. "
+                f"Valid: {list(_SECTION_MARKERS)}"
+            )
+        start_patterns, stop_patterns = _SECTION_MARKERS[section_id]
+
+        import pypdf
+        reader = pypdf.PdfReader(str(pdf_path))
+        full_text = "\n".join(page.extract_text() or "" for page in reader.pages)
+        full_text = _normalize_item_markers(full_text)
+
+        # Split into lines; treat each line as a candidate heading.
+        lines = full_text.splitlines()
+
+        def _matches_any(text: str, patterns: list[str]) -> bool:
+            for pat in patterns:
+                if re.search(pat, text, re.IGNORECASE):
+                    return True
+            return False
+
+        start_idx = None
+        for idx, line in enumerate(lines):
+            if _matches_any(line, start_patterns):
+                start_idx = idx
+                break
+        if start_idx is None:
+            return ""
+
+        collected: list[str] = []
+        for line in lines[start_idx:]:
+            if line is not lines[start_idx] and _matches_any(line, stop_patterns):
+                break
+            if line.strip():
+                collected.append(line)
+
+        result = "\n".join(collected)
+        return result[:_MAX_SECTION_CHARS]
+
+    # ------------------------------------------------------------------
+    # 2.7 — Auto-dispatcher (HTML vs PDF by file extension)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def extract_filing_section_auto(filing_path: Path, section_id: str) -> str:
+        """Extract a section from a filing on disk; auto-dispatches by extension.
+
+        Supports .htm, .html (→ extract_filing_section) and .pdf
+        (→ extract_filing_section_pdf). Raises ValueError for any other suffix.
+        """
+        filing_path = Path(filing_path)
+        suffix = filing_path.suffix.lower()
+        if suffix in (".htm", ".html"):
+            return EdgarClient.extract_filing_section(
+                filing_path.read_text(errors="ignore"), section_id
+            )
+        if suffix == ".pdf":
+            return EdgarClient.extract_filing_section_pdf(filing_path, section_id)
+        raise ValueError(
+            f"Unsupported filing format: {suffix!r}. "
+            f"Supported: .htm, .html, .pdf"
+        )
 
     # ------------------------------------------------------------------
     # Existing public API — fetch_10k_excerpt (bug-fixed)

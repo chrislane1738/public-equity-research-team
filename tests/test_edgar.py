@@ -477,3 +477,142 @@ async def test_lookup_cik_caches_the_mapping_file(client, respx_mock):
     assert cik1 == "0000320193"
     assert cik2 == "0000320193"
     assert route.call_count == 1
+
+
+# ------------------------------------------------------------------
+# _normalize_item_markers — HTML entities, nbsp, § notation
+# ------------------------------------------------------------------
+
+from tools.edgar import _normalize_item_markers
+
+
+def test_normalize_item_markers_decodes_html_entities():
+    # &#167; is § (numeric entity); &nbsp; is non-breaking space
+    raw = "Item&nbsp;7. MD&amp;A"
+    result = _normalize_item_markers(raw)
+    assert "Item 7." in result  # nbsp normalized to plain space
+    assert "MD&A" in result     # &amp; decoded
+
+
+def test_normalize_item_markers_handles_nbsp_in_marker():
+    raw = "Item\xa07. Management's Discussion"
+    result = _normalize_item_markers(raw)
+    assert "Item 7." in result
+
+
+def test_normalize_item_markers_converts_section_sign_to_item():
+    raw = "§ 7. MD&A Section"
+    result = _normalize_item_markers(raw)
+    assert "Item 7." in result
+
+
+def test_extract_filing_section_handles_nbsp_in_item_marker():
+    """Legacy filer with nbsp inside the marker — was a known parser miss."""
+    html = """
+    <html><body>
+    <h2>Item&nbsp;7. MD&amp;A</h2>
+    <p>Revenue increased 30%</p>
+    <h2>Item&nbsp;7A. Quantitative Risk</h2>
+    <p>Interest rate sensitivity</p>
+    </body></html>
+    """
+    text = EdgarClient.extract_filing_section(html, "mda")
+    assert "Revenue increased 30%" in text
+    assert "Interest rate sensitivity" not in text
+
+
+# ------------------------------------------------------------------
+# extract_filing_section_pdf — pypdf-based extractor
+# ------------------------------------------------------------------
+
+
+def test_extract_filing_section_pdf_extracts_mda(monkeypatch, tmp_path):
+    """Mock pypdf.PdfReader; verify section pattern matching on extracted text."""
+    pdf_file = tmp_path / "fake.pdf"
+    pdf_file.write_bytes(b"%PDF-1.4 stub")
+
+    # Build a fake page whose extract_text() returns 10-K-like content.
+    class _FakePage:
+        def __init__(self, text):
+            self._text = text
+        def extract_text(self):
+            return self._text
+
+    class _FakeReader:
+        def __init__(self, path):
+            self.pages = [
+                _FakePage("Cover page text\nItem 1. Business\nWe make things."),
+                _FakePage("Item 7. MD&A\nRevenue rose 25%.\nGross margin held at 42%."),
+                _FakePage("Item 7A. Quantitative Risk\nForeign currency exposure."),
+                _FakePage("Item 8. Financial Statements\nSee tables."),
+            ]
+
+    monkeypatch.setattr("pypdf.PdfReader", _FakeReader)
+    text = EdgarClient.extract_filing_section_pdf(pdf_file, "mda")
+    assert "Revenue rose 25%" in text
+    assert "Gross margin held at 42%" in text
+    # Stop boundary respected — 7A content should not bleed through
+    assert "Foreign currency exposure" not in text
+    # And shouldn't drift into Item 8 either
+    assert "See tables" not in text
+
+
+def test_extract_filing_section_pdf_returns_empty_when_section_absent(monkeypatch, tmp_path):
+    pdf_file = tmp_path / "fake.pdf"
+    pdf_file.write_bytes(b"%PDF-1.4 stub")
+
+    class _FakePage:
+        def extract_text(self):
+            return "This filing has no Item markers at all, just narrative."
+
+    class _FakeReader:
+        def __init__(self, path):
+            self.pages = [_FakePage()]
+
+    monkeypatch.setattr("pypdf.PdfReader", _FakeReader)
+    text = EdgarClient.extract_filing_section_pdf(pdf_file, "mda")
+    assert text == ""
+
+
+def test_extract_filing_section_pdf_rejects_unknown_section_id(tmp_path):
+    pdf_file = tmp_path / "fake.pdf"
+    pdf_file.write_bytes(b"%PDF-1.4 stub")
+    with pytest.raises(ValueError, match="Unknown section_id"):
+        EdgarClient.extract_filing_section_pdf(pdf_file, "executive_summary")
+
+
+# ------------------------------------------------------------------
+# extract_filing_section_auto — dispatcher by file extension
+# ------------------------------------------------------------------
+
+
+def test_extract_filing_section_auto_dispatches_html(tmp_path):
+    f = tmp_path / "filing.htm"
+    f.write_text("<html><body><h2>Item 7. MD&A</h2><p>Revenue up 10%.</p>"
+                 "<h2>Item 7A. Risk</h2><p>FX exposure.</p></body></html>")
+    text = EdgarClient.extract_filing_section_auto(f, "mda")
+    assert "Revenue up 10%" in text
+
+
+def test_extract_filing_section_auto_dispatches_pdf(monkeypatch, tmp_path):
+    pdf_file = tmp_path / "filing.pdf"
+    pdf_file.write_bytes(b"%PDF-1.4 stub")
+
+    class _FakePage:
+        def extract_text(self):
+            return "Item 7. MD&A\nNet income flat.\nItem 7A. Risk\nrate sensitivity"
+
+    class _FakeReader:
+        def __init__(self, path):
+            self.pages = [_FakePage()]
+
+    monkeypatch.setattr("pypdf.PdfReader", _FakeReader)
+    text = EdgarClient.extract_filing_section_auto(pdf_file, "mda")
+    assert "Net income flat" in text
+
+
+def test_extract_filing_section_auto_rejects_unsupported_extension(tmp_path):
+    f = tmp_path / "filing.txt"
+    f.write_text("Item 7. MD&A\nstuff")
+    with pytest.raises(ValueError, match="Unsupported filing format"):
+        EdgarClient.extract_filing_section_auto(f, "mda")
