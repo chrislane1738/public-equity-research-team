@@ -33,6 +33,7 @@ to produce a single self-contained `report.html` plus companion .docx / .pptx /
 | Command | Workflow | Wall-clock |
 |---|---|---|
 | `/deep-dive <TICKER>` | Full 10-agent deep-dive | ~8 min |
+| `/update <TICKER>` | Quarterly refresh on previously-covered ticker; diff-style synthesis vs prior | ~4-5 min |
 | `/earnings <TICKER>` | Earnings-update (fundamentals delta → memo) | ~4 min |
 | `/morning <TICKER>` | Morning-note (quick fundamentals + synthesis) | ~1 min |
 | `/thesis <TICKER> "<question>"` | Targeted thesis check | varies |

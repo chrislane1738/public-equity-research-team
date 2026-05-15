@@ -52,9 +52,55 @@ These framing rules govern the *order and emphasis* of the synthesis sections, n
 5. **Produce synthesis** — write the six-part synthesis document per the SYSTEM_PROMPT above, applying the Plan B framing rule appropriate to the rating.
 6. **Write output** — use the `Write` tool to save the completed synthesis to `~/Documents/equity-research/<TICKER>/synthesis/_synthesis.md`. Create the `synthesis/` directory if it does not exist.
 
+## Mode parameter — `mode="update"` (diff against prior synthesis)
+
+The dispatching command can pass `mode="update"` instead of the default
+`mode="deep-dive"`. Update mode is used by the `/update <TICKER>` workflow
+for a quarterly refresh of a previously-covered name.
+
+In update mode, BEFORE writing the new synthesis:
+
+1. **Read the prior synthesis** at `~/Documents/equity-research/<TICKER>/synthesis/_synthesis.md`. Capture:
+   - Prior rating (Buy / Hold / Sell)
+   - Prior price target
+   - Prior synthesis date (from frontmatter, top header, or first `Date:` line)
+   - Prior valuation triangulation table (the weighted methods and weights)
+   - Prior decision conditions
+2. **Cache the prior version on disk** at `~/Documents/equity-research/<TICKER>/synthesis/_synthesis.prior.md` (preserves the diff baseline if the user runs `/update` again later).
+
+Then write the new synthesis with these MODIFICATIONS to the standard format:
+
+- **Lead with a "Δ vs prior synthesis" block** above the Executive Summary. Format:
+
+  ```markdown
+  ## Δ vs prior synthesis ([prior_date])
+
+  **Rating:** <prior_rating> → <new_rating>  *([changed | unchanged])*
+  **Price target:** $<prior_pt> → $<new_pt>  *(<delta_pct>% [up | down | flat])*
+  **Triangulation method drift:** [one sentence on whether method weights or implied PTs moved materially]
+
+  **What moved (by pod):**
+  - **Accountant:** [1 line on whether new red flags surfaced or reconciliation status changed]
+  - **Fundamentals:** [1 line on TTM revenue / margin / KPI deltas]
+  - **DCF:** [1 line on WACC / terminal / sensitivity changes]
+  - **Comps:** [1 line on peer-median multiple drift]
+  - **Macro:** [1 line on rates / catalyst-calendar changes]
+  - **Technicals:** [1 line on price vs SMA / momentum changes]
+  - **Industry / Risk:** *(reused from prior run — no refresh)* OR [1 line if explicitly refreshed]
+  ```
+
+- **Apply the Plan B framing rule to the *new* rating**, not the prior. If the rating flipped (e.g., Buy → Hold), use the new framing (Hold = balanced).
+
+- **Decision conditions section:** explicitly note which prior decision conditions tripped (if any) and which new ones are in force.
+
+The remaining synthesis sections (Executive Summary, Triangulation table, Application logic) follow the standard format from the SYSTEM_PROMPT but cover the NEW state, not a duplicated history.
+
+If `mode="update"` is requested but `_synthesis.md` does not exist (no prior baseline), halt and return: *"No prior synthesis for <TICKER>. /update requires a prior /deep-dive baseline; run /deep-dive first."*
+
 ## Output
 
 - `~/Documents/equity-research/<TICKER>/synthesis/_synthesis.md`
+- (update mode only) `~/Documents/equity-research/<TICKER>/synthesis/_synthesis.prior.md` — cached prior version
 
 ## Stop conditions
 

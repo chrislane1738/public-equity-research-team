@@ -22,6 +22,24 @@ Outputs: minimal — `fundamentals/section.md`, `dcf/section.md`,
 
 Example: `/earnings ANET`
 
+## `/update <TICKER>` — Quarterly Refresh (~4-5 min)
+
+For a ticker we've previously deep-dove. Refreshes only the quarter-sensitive
+pods (fundamentals, comps, macro, technicals, DCF) + the accountant in
+earnings-update mode. Reuses prior industry-moat + risk-upside sections
+(saves ~30-40% vs a full deep-dive). Synthesis runs in diff mode — produces a
+"Δ vs prior synthesis" block showing rating change, PT delta, and what moved
+by pod.
+
+Defaults to the prior peer list (with user confirmation). Same three pause
+checkpoints as `/deep-dive` (accountant findings, peer list, deliverable
+selection).
+
+If no prior `_synthesis.md` exists, the workflow halts and asks the user to
+run `/deep-dive` first.
+
+Example: `/update MU`
+
 ## `/morning <TICKER>` — Morning Note (~1 min)
 
 Stages: fundamentals delta → md-synthesis writes the note directly.
