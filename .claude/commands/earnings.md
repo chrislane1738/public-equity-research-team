@@ -7,12 +7,18 @@ Run an earnings-update on `$1`. Unlike `/deep-dive`, this skips comps + the 5-po
 
 1. **Validate ticker.** Confirm `MarketData.get_profile($1)` returns non-empty. If empty, halt and report.
 
-2. **Dispatch `accountant` skill as a subagent in earnings-update mode** — lightweight variant. Skip the full XBRL pull and full red-flag taxonomy. Do:
-   - Download the latest 8-K (Ex-99.1 earnings release).
-   - Download the latest earnings presentation (Ex-99.2 if filed; IR site WebSearch fallback otherwise).
-   - Run a *narrowed* reconciliation on revenue / gross profit / operating income / net income / OCF for the most recent quarter only (vs FMP's most recent quarterly).
-   - Write `accountant/section.md` with a brief earnings-release summary + the narrow reconciliation result.
-   - Return `CLEAN` / `PAUSE_FOR_REVIEW` / `FMP_ONLY_FALLBACK` per the standard signal contract.
+2. **Dispatch `accountant` skill as a subagent with `mode="earnings-update"`.** The accountant skill body has explicit short-circuits for this mode:
+   - Step 2: pull most recent 8-K only.
+   - Step 3: XBRL pull narrows to the most recent quarter (skip annual).
+   - Step 4: FMP pulls narrow to the latest quarterly period only.
+   - Step 5: reconciliation runs on the latest Q only.
+   - Step 6: download latest 8-K + earnings deck only (skip 10-K, 10-Q, DEF 14A).
+   - Step 7: full earnings-presentation hunt (unchanged — this is the priority artifact).
+   - Step 8: skip 10-K section extracts entirely.
+   - Step 9: reduced red-flag set — RF-01 (revenue rec), RF-02 (OCF/NI), RF-06 (segment reorg), RF-14 (inventory write-downs).
+   - Returns `CLEAN` / `PAUSE_FOR_REVIEW` / `FMP_ONLY_FALLBACK` per the standard signal contract.
+
+   Save ~30-50% of the accountant's wall-clock + tokens vs the deep-dive variant.
 
 3. **PAUSE CHECKPOINT — present accountant findings.** Same logic as `/deep-dive` Checkpoint A:
    - `CLEAN`: brief summary, ask to proceed.
