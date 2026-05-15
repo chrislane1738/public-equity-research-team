@@ -27,7 +27,4 @@ markdown>=3.5
 pypdf>=4.0.0
 
 # SEC EDGAR access (tools/edgar.py) — MIT-licensed, free, no API key.
-# The [ai] extra pulls in mcp, which requires starlette>=0.49 / pydantic>=2.11;
-# this bumps starlette/pydantic past fastapi 0.118's declared pin. fastapi
-# runs fine against starlette 1.0 at runtime, so the resolver warning is benign.
-edgartools[ai]==5.31.2
+edgartools==5.31.2
