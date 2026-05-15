@@ -68,6 +68,37 @@ class EdgarClient:
         path.write_text(json.dumps(data))
 
     # ------------------------------------------------------------------
+    # Ticker → CIK lookup
+    # ------------------------------------------------------------------
+
+    async def lookup_cik(self, ticker: str) -> Optional[str]:
+        """Resolve a US-listed ticker to its 10-digit zero-padded SEC CIK.
+
+        Uses SEC's official ticker→CIK mapping at
+        https://www.sec.gov/files/company_tickers.json. Returns None for
+        tickers not present in the mapping (typically foreign-listed
+        companies without US ADRs) — that None is the signal for
+        accountant fallback to FMP-only mode.
+
+        The mapping file is fetched once and cached on disk for 24h.
+        """
+        cache_file = self._cache_path("company_tickers")
+        mapping = self._read_cache(cache_file)
+        if mapping is None:
+            url = "https://www.sec.gov/files/company_tickers.json"
+            async with httpx.AsyncClient(timeout=30.0, headers=self.headers) as http:
+                resp = await http.get(url)
+                resp.raise_for_status()
+                mapping = resp.json()
+            self._write_cache(cache_file, mapping)
+
+        ticker_upper = ticker.upper()
+        for entry in mapping.values():
+            if isinstance(entry, dict) and entry.get("ticker", "").upper() == ticker_upper:
+                return f"{int(entry['cik_str']):010d}"
+        return None
+
+    # ------------------------------------------------------------------
     # 2.1 — Submissions
     # ------------------------------------------------------------------
 

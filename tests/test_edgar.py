@@ -430,3 +430,50 @@ async def test_fetch_10k_excerpt_fixed_for_uppercase_items(client, respx_mock):
 
     assert "Revenue increased 30%" in excerpt
     assert "Interest rate sensitivity" not in excerpt  # 7A must be excluded
+
+
+# ------------------------------------------------------------------
+# lookup_cik — ticker → CIK via SEC's official mapping file
+# ------------------------------------------------------------------
+
+SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
+
+MINIMAL_TICKER_MAPPING = {
+    "0": {"cik_str": 320193, "ticker": "AAPL", "title": "Apple Inc."},
+    "1": {"cik_str": 789019, "ticker": "MSFT", "title": "Microsoft Corp"},
+    "2": {"cik_str": 723125, "ticker": "MU", "title": "Micron Technology, Inc."},
+}
+
+
+@respx.mock(using="httpx")
+async def test_lookup_cik_returns_padded_string_for_known_us_ticker(client, respx_mock):
+    respx_mock.get(SEC_TICKERS_URL).mock(return_value=Response(200, json=MINIMAL_TICKER_MAPPING))
+    cik = await client.lookup_cik("MU")
+    assert cik == "0000723125"
+
+
+@respx.mock(using="httpx")
+async def test_lookup_cik_is_case_insensitive(client, respx_mock):
+    respx_mock.get(SEC_TICKERS_URL).mock(return_value=Response(200, json=MINIMAL_TICKER_MAPPING))
+    cik = await client.lookup_cik("aapl")
+    assert cik == "0000320193"
+
+
+@respx.mock(using="httpx")
+async def test_lookup_cik_returns_none_for_foreign_ticker(client, respx_mock):
+    respx_mock.get(SEC_TICKERS_URL).mock(return_value=Response(200, json=MINIMAL_TICKER_MAPPING))
+    cik = await client.lookup_cik("005930.KS")  # Samsung — not in SEC mapping
+    assert cik is None
+
+
+@respx.mock(using="httpx")
+async def test_lookup_cik_caches_the_mapping_file(client, respx_mock):
+    """Two consecutive calls hit the network only once."""
+    route = respx_mock.get(SEC_TICKERS_URL).mock(
+        return_value=Response(200, json=MINIMAL_TICKER_MAPPING)
+    )
+    cik1 = await client.lookup_cik("AAPL")
+    cik2 = await client.lookup_cik("AAPL")
+    assert cik1 == "0000320193"
+    assert cik2 == "0000320193"
+    assert route.call_count == 1
