@@ -69,28 +69,105 @@ def client(tmp_path):
 
 
 # ------------------------------------------------------------------
-# Existing test — fetch_10k_excerpt (must still pass after refactor)
+# fetch_10k_excerpt — edgartools structured TenK path + regex fallback
 # ------------------------------------------------------------------
+#
+# fetch_10k_excerpt now pulls sections from edgartools' structured TenK parser
+# (Company.latest_tenk). We mock the edgartools `Company` so the TenK path is
+# exercised without network access; a separate test drives the regex fallback.
+
+
+class _FakeTenK:
+    """Stand-in for edgartools' TenK object — exposes the section properties
+    that EdgarClient._fetch_10k_sections_edgartools reads."""
+
+    def __init__(self, business="", risk_factors="", management_discussion=""):
+        self.business = business
+        self.risk_factors = risk_factors
+        self.management_discussion = management_discussion
+
+
+class _FakeCompany:
+    """Stand-in for edgartools' Company — yields a _FakeTenK or raises."""
+
+    _tenk = None
+    _html = None
+
+    def __init__(self, identifier):
+        self.identifier = identifier
+
+    @property
+    def latest_tenk(self):
+        return type(self)._tenk
+
+    def get_filings(self, form=None):
+        return self  # chainable stub
+
+    def latest(self):
+        if type(self)._html is None:
+            return None
+        outer = self
+
+        class _FakeFiling:
+            def html(self_inner):
+                return type(outer)._html
+
+        return _FakeFiling()
+
+
+async def test_fetch_10k_excerpt_uses_edgartools_tenk_sections(client, monkeypatch):
+    """Primary path: sections come straight from edgartools' TenK object."""
+    fake_tenk = _FakeTenK(
+        business="Item 1. Business\nNVIDIA operates in two reportable segments.",
+        risk_factors="Item 1A. Risk Factors\nWe face supply chain concentration risk.",
+        management_discussion="Item 7. Management's Discussion\nRevenue grew 126% YoY.",
+    )
+
+    def _fake_company(identifier):
+        c = _FakeCompany(identifier)
+        type(c)._tenk = fake_tenk
+        return c
+
+    monkeypatch.setattr("tools.edgar.Company", _fake_company)
+
+    excerpt = await client.fetch_10k_excerpt("NVDA", cik="0001045810")
+
+    assert "two reportable segments" in excerpt
+    assert "supply chain concentration" in excerpt
+    assert "Revenue grew 126%" in excerpt
+    # the --- delimiter joins the three sections
+    assert excerpt.count("\n\n---\n\n") == 2
 
 
 @respx.mock(using="httpx")
-async def test_extract_sections_pulls_business_risk_mda(client, respx_mock):
-    respx_mock.get("https://data.sec.gov/submissions/CIK0001045810.json").mock(
-        return_value=Response(200, json={
-            "filings": {
-                "recent": {
-                    "form": ["10-K"],
-                    "accessionNumber": ["0001045810-24-000029"],
-                    "primaryDocument": ["nvda-20240128.htm"],
-                }
-            }
-        })
-    )
-    respx_mock.get(
-        "https://www.sec.gov/Archives/edgar/data/1045810/000104581024000029/nvda-20240128.htm"
-    ).mock(return_value=Response(200, text=FIXTURE_HTML))
+async def test_fetch_10k_excerpt_falls_back_to_raw_html(client, respx_mock, monkeypatch):
+    """Fallback path: when edgartools' TenK yields nothing, fetch raw 10-K
+    HTML and run the regex section extractor."""
 
-    excerpt = await client.fetch_10k_excerpt("NVDA", cik="0001045810")
+    class _NoTenKCompany:
+        def __init__(self, identifier):
+            self.identifier = identifier
+
+        @property
+        def latest_tenk(self):
+            return None  # forces the fallback
+
+        def get_filings(self, form=None):
+            return self
+
+        def latest(self):
+            outer = self
+
+            class _Filing:
+                def html(self_inner):
+                    return FIXTURE_HTML
+
+            return _Filing()
+
+    monkeypatch.setattr("tools.edgar.Company", _NoTenKCompany)
+
+    with pytest.warns(UserWarning, match="falling back to raw-HTML"):
+        excerpt = await client.fetch_10k_excerpt("NVDA", cik="0001045810")
 
     assert "Business" in excerpt
     assert "two reportable segments" in excerpt
@@ -403,80 +480,103 @@ def test_extract_filing_section_raises_for_unknown_section():
 
 
 # ------------------------------------------------------------------
-# 2.6 — fetch_10k_excerpt now uses extract_filing_section (fixture test)
-#        uses the UPPERCASE fixture to verify the bug is fixed end-to-end
+# 2.6 — fetch_10k_excerpt fallback path handles uppercase Item markers
+#        (regression: the regex extractor must still match uppercase ITEM 7.)
 # ------------------------------------------------------------------
 
 
-@respx.mock(using="httpx")
-async def test_fetch_10k_excerpt_fixed_for_uppercase_items(client, respx_mock):
-    """fetch_10k_excerpt must return MD&A content even when markers are uppercase."""
-    respx_mock.get("https://data.sec.gov/submissions/CIK0001045810.json").mock(
-        return_value=Response(200, json={
-            "filings": {
-                "recent": {
-                    "form": ["10-K"],
-                    "accessionNumber": ["0001045810-24-000029"],
-                    "primaryDocument": ["nvda-20240128.htm"],
-                }
-            }
-        })
-    )
-    respx_mock.get(
-        "https://www.sec.gov/Archives/edgar/data/1045810/000104581024000029/nvda-20240128.htm"
-    ).mock(return_value=Response(200, text=_UPPERCASE_10K_HTML))
+async def test_fetch_10k_excerpt_fixed_for_uppercase_items(client, monkeypatch):
+    """When the fallback regex extractor runs, uppercase ITEM 7. must still
+    be matched and cut before ITEM 7A."""
 
-    excerpt = await client.fetch_10k_excerpt("NVDA", cik="0001045810")
+    class _UppercaseHtmlCompany:
+        def __init__(self, identifier):
+            self.identifier = identifier
+
+        @property
+        def latest_tenk(self):
+            return None  # forces the raw-HTML + regex fallback
+
+        def get_filings(self, form=None):
+            return self
+
+        def latest(self):
+            class _Filing:
+                def html(self_inner):
+                    return _UPPERCASE_10K_HTML
+
+            return _Filing()
+
+    monkeypatch.setattr("tools.edgar.Company", _UppercaseHtmlCompany)
+
+    with pytest.warns(UserWarning):
+        excerpt = await client.fetch_10k_excerpt("NVDA", cik="0001045810")
 
     assert "Revenue increased 30%" in excerpt
     assert "Interest rate sensitivity" not in excerpt  # 7A must be excluded
 
 
 # ------------------------------------------------------------------
-# lookup_cik — ticker → CIK via SEC's official mapping file
+# lookup_cik — ticker → CIK via edgartools' get_company_tickers
 # ------------------------------------------------------------------
+#
+# edgartools fetches the SEC ticker→CIK mapping internally and returns it as a
+# pandas DataFrame (columns: cik, ticker, exchange, company). We mock that
+# DataFrame at the `get_company_tickers` entry point so the EdgarClient's own
+# zip/upper/zero-pad logic still runs against realistic data.
 
-SEC_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
+import pandas as pd
 
-MINIMAL_TICKER_MAPPING = {
-    "0": {"cik_str": 320193, "ticker": "AAPL", "title": "Apple Inc."},
-    "1": {"cik_str": 789019, "ticker": "MSFT", "title": "Microsoft Corp"},
-    "2": {"cik_str": 723125, "ticker": "MU", "title": "Micron Technology, Inc."},
-}
+MINIMAL_TICKER_DF = pd.DataFrame(
+    [
+        {"cik": 320193, "ticker": "AAPL", "exchange": "NASDAQ", "company": "Apple Inc."},
+        {"cik": 789019, "ticker": "MSFT", "exchange": "NASDAQ", "company": "Microsoft Corp"},
+        {"cik": 723125, "ticker": "MU", "exchange": "NASDAQ", "company": "Micron Technology, Inc."},
+    ]
+)
 
 
-@respx.mock(using="httpx")
-async def test_lookup_cik_returns_padded_string_for_known_us_ticker(client, respx_mock):
-    respx_mock.get(SEC_TICKERS_URL).mock(return_value=Response(200, json=MINIMAL_TICKER_MAPPING))
+@pytest.fixture
+def mock_company_tickers(monkeypatch):
+    """Patch edgartools' get_company_tickers to return a fixed DataFrame.
+
+    Returns a counter dict so tests can assert how many times edgartools'
+    network-backed loader was actually invoked (caching coverage).
+    """
+    calls = {"count": 0}
+
+    def _fake_get_company_tickers(*args, **kwargs):
+        calls["count"] += 1
+        return MINIMAL_TICKER_DF.copy()
+
+    # Patch in the `edgar` package — EdgarClient imports it lazily inside
+    # _load_ticker_mapping, so patching the source module is what counts.
+    monkeypatch.setattr("edgar.get_company_tickers", _fake_get_company_tickers)
+    return calls
+
+
+async def test_lookup_cik_returns_padded_string_for_known_us_ticker(client, mock_company_tickers):
     cik = await client.lookup_cik("MU")
     assert cik == "0000723125"
 
 
-@respx.mock(using="httpx")
-async def test_lookup_cik_is_case_insensitive(client, respx_mock):
-    respx_mock.get(SEC_TICKERS_URL).mock(return_value=Response(200, json=MINIMAL_TICKER_MAPPING))
+async def test_lookup_cik_is_case_insensitive(client, mock_company_tickers):
     cik = await client.lookup_cik("aapl")
     assert cik == "0000320193"
 
 
-@respx.mock(using="httpx")
-async def test_lookup_cik_returns_none_for_foreign_ticker(client, respx_mock):
-    respx_mock.get(SEC_TICKERS_URL).mock(return_value=Response(200, json=MINIMAL_TICKER_MAPPING))
+async def test_lookup_cik_returns_none_for_foreign_ticker(client, mock_company_tickers):
     cik = await client.lookup_cik("005930.KS")  # Samsung — not in SEC mapping
     assert cik is None
 
 
-@respx.mock(using="httpx")
-async def test_lookup_cik_caches_the_mapping_file(client, respx_mock):
-    """Two consecutive calls hit the network only once."""
-    route = respx_mock.get(SEC_TICKERS_URL).mock(
-        return_value=Response(200, json=MINIMAL_TICKER_MAPPING)
-    )
+async def test_lookup_cik_caches_the_mapping_file(client, mock_company_tickers):
+    """Two consecutive calls hit edgartools' loader only once (disk-cached)."""
     cik1 = await client.lookup_cik("AAPL")
     cik2 = await client.lookup_cik("AAPL")
     assert cik1 == "0000320193"
     assert cik2 == "0000320193"
-    assert route.call_count == 1
+    assert mock_company_tickers["count"] == 1  # only one real load
 
 
 # ------------------------------------------------------------------
@@ -616,3 +716,72 @@ def test_extract_filing_section_auto_rejects_unsupported_extension(tmp_path):
     f.write_text("Item 7. MD&A\nstuff")
     with pytest.raises(ValueError, match="Unsupported filing format"):
         EdgarClient.extract_filing_section_auto(f, "mda")
+
+
+# ------------------------------------------------------------------
+# Network integration tests — verify the *real* edgartools paths.
+#
+# The offline unit tests above mock edgartools at its entry points so they run
+# fast and deterministically; they prove the EdgarClient wiring and the regex
+# fallback, but not edgartools itself. These opt-in tests hit live SEC via
+# edgartools to confirm the structured-parser path actually works.
+#
+# Run them explicitly:  pytest tests/test_edgar.py -m network
+# They are skipped by default so the standard suite stays offline.
+# ------------------------------------------------------------------
+
+
+@pytest.mark.network
+async def test_lookup_cik_live(client):
+    """edgartools' real ticker→CIK mapping resolves a known US ticker."""
+    cik = await client.lookup_cik("AAPL")
+    assert cik == "0000320193"
+    assert await client.lookup_cik("NOT_A_REAL_TICKER_XYZ") is None
+
+
+@pytest.mark.network
+async def test_get_company_submissions_live(client):
+    """edgartools-backed download_json returns raw SEC submissions JSON."""
+    subs = await client.get_company_submissions("320193")
+    assert subs["cik"] in ("320193", "0000320193")
+    assert "10-K" in subs["filings"]["recent"]["form"]
+
+
+@pytest.mark.network
+async def test_get_company_facts_live(client):
+    """edgartools-backed download_json returns raw XBRL companyfacts JSON."""
+    facts = await client.get_company_facts("320193")
+    assert facts["entityName"]
+    # raw-shape contract: facts → us-gaap → concept → units → period list
+    assert "us-gaap" in facts["facts"]
+
+
+@pytest.mark.network
+async def test_extract_filing_section_real_filing_uses_edgartools_parser(client):
+    """The edgartools structured section parser (not the regex fallback)
+    extracts MD&A from a real 10-K and respects the 7A boundary."""
+    import warnings as _w
+
+    from tools.edgar import Company
+
+    filing = Company("AAPL").get_filings(form="10-K").latest()
+    html = filing.html()
+
+    with _w.catch_warnings(record=True) as caught:
+        _w.simplefilter("always")
+        mda = EdgarClient.extract_filing_section(html, "mda")
+
+    # edgartools parsed it — so no fallback warning should have fired.
+    assert not [w for w in caught if "falling back" in str(w.message)]
+    assert len(mda) > 1_000
+    assert "Management" in mda and "Discussion" in mda
+    # MD&A must not bleed into Item 7A.
+    assert "Quantitative and Qualitative Disclosures" not in mda
+
+
+@pytest.mark.network
+async def test_fetch_10k_excerpt_live(client):
+    """End-to-end: fetch_10k_excerpt pulls real 10-K sections via edgartools."""
+    excerpt = await client.fetch_10k_excerpt("AAPL", cik="0000320193")
+    assert len(excerpt) > 1_000
+    assert "---" in excerpt  # multiple sections joined
