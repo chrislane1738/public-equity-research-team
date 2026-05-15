@@ -66,3 +66,23 @@ class ScreenResult(TypedDict, total=False):
     market_cap: float
     industry: str
     sector: str
+
+
+class ShortInterest(TypedDict, total=False):
+    """Normalized short-interest snapshot for a single ticker.
+
+    `short_percent_of_float` is a fraction (0.0–1.0), e.g. 0.042 == 4.2% of float.
+    `days_to_cover` is the short ratio (shares short / avg daily volume); null if
+    neither the provider supplies it nor average daily volume is available.
+    The `prior_*` fields are the previous FINRA settlement period (~30 days back)
+    so a caller can compute a short-interest trend/delta.
+    """
+    symbol: str
+    short_percent_of_float: float        # fraction of float sold short
+    days_to_cover: float                 # short ratio (days)
+    shares_short: float                  # absolute shares sold short
+    as_of_date: str                      # ISO yyyy-mm-dd of the current data point
+    prior_shares_short: float            # shares short, prior period
+    prior_short_percent_of_float: float  # short % of float, prior period
+    prior_as_of_date: str                # ISO yyyy-mm-dd of the prior data point
+    source: str                          # "fmp" or "yfinance"

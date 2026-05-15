@@ -102,6 +102,22 @@ class FmpClient:
         rows = await self._get("analyst-estimates", ticker)
         return list(rows) if rows else []
 
+    async def get_short_interest(self, ticker: str) -> list[dict[str, Any]]:
+        """Short-interest history (FINRA bi-monthly settlement cycle).
+
+        FMP exposes short interest via the ``short-interest`` endpoint. The exact
+        endpoint name is plan-dependent and may not exist on every FMP tier, so
+        this method degrades cleanly: any HTTP error (404, 403, 429, ...) or an
+        empty body yields ``[]`` rather than raising, letting the MarketData
+        facade fall through to the yfinance fallback. Rows are returned newest
+        first, matching FMP's other history endpoints.
+        """
+        try:
+            rows = await self._get("short-interest", ticker)
+        except Exception:
+            return []
+        return list(rows) if rows else []
+
     async def get_10y_treasury_rate(self) -> float:
         """Return the latest 10-year UST rate as a percent (e.g. 4.25 for 4.25%)."""
         cache_file = self.cache_dir / "_TREASURY_RATES.json"
@@ -150,7 +166,9 @@ class FmpClient:
 # Normalization helpers — map FMP response shapes → interface TypedDicts
 # ---------------------------------------------------------------------------
 
-from tools.marketdata.interface import Profile, Quote, HistoricalBar  # noqa: E402
+from tools.marketdata.interface import (  # noqa: E402
+    HistoricalBar, Profile, Quote, ShortInterest,
+)
 
 
 def normalize_profile(raw: dict) -> Profile:
@@ -184,6 +202,66 @@ def normalize_quote(raw: dict) -> Quote:
         "fifty_two_week_high": float(raw.get("yearHigh", 0) or 0),
         "fifty_two_week_low": float(raw.get("yearLow", 0) or 0),
     }
+
+
+def _to_float(value) -> float | None:
+    """Coerce to a plain float, or None when the value is absent/blank."""
+    if value in (None, "", "None"):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def normalize_short_interest(rows) -> ShortInterest:
+    """FMP /stable/short-interest (list, newest first) → ShortInterest shape.
+
+    FMP returns a history of FINRA bi-monthly settlement records. The first row
+    is the current data point; the second (if present) is the prior period.
+    Field names vary slightly across FMP tiers, so each is resolved against a
+    handful of known aliases. Returns ``{}`` when nothing usable is present.
+    """
+    if isinstance(rows, dict):
+        rows = [rows]
+    if not rows:
+        return {}
+
+    def _pick(rec: dict, *keys):
+        for k in keys:
+            if k in rec and rec[k] not in (None, ""):
+                return rec[k]
+        return None
+
+    cur = rows[0]
+    prior = rows[1] if len(rows) > 1 else {}
+
+    shares_short = _to_float(_pick(cur, "shortInterest", "sharesShort", "totalShortInterest"))
+    pct_float = _to_float(_pick(cur, "shortPercentOfFloat", "shortInterestRatio", "shortFloatPercent"))
+    days_to_cover = _to_float(_pick(cur, "daysToCover", "shortRatio", "daysToCoverShort"))
+    if days_to_cover is None:
+        avg_vol = _to_float(_pick(cur, "averageVolume", "avgDailyVolume", "volume"))
+        if shares_short is not None and avg_vol:
+            days_to_cover = shares_short / avg_vol
+
+    si: ShortInterest = {
+        "symbol": str(_pick(cur, "symbol") or "").upper(),
+        "shares_short": shares_short,
+        "short_percent_of_float": pct_float,
+        "days_to_cover": days_to_cover,
+        "as_of_date": str(_pick(cur, "date", "settlementDate", "recordDate") or ""),
+        "prior_shares_short": _to_float(
+            _pick(prior, "shortInterest", "sharesShort", "totalShortInterest")),
+        "prior_short_percent_of_float": _to_float(
+            _pick(prior, "shortPercentOfFloat", "shortInterestRatio", "shortFloatPercent")),
+        "prior_as_of_date": str(_pick(prior, "date", "settlementDate", "recordDate") or ""),
+        "source": "fmp",
+    }
+    # Reject a row carrying no actual short-interest signal so the facade
+    # can fall through to the yfinance fallback.
+    if si["shares_short"] is None and si["short_percent_of_float"] is None:
+        return {}
+    return si
 
 
 def normalize_historical(raw) -> list[HistoricalBar]:

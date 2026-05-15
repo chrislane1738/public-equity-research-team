@@ -211,3 +211,36 @@ async def test_get_10y_treasury_rate_uses_cache(respx_mock, client):
     await client.get_10y_treasury_rate()
     await client.get_10y_treasury_rate()
     assert route.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Short interest
+# ---------------------------------------------------------------------------
+
+
+@respx.mock(using="httpx")
+async def test_get_short_interest_returns_records(respx_mock, client):
+    respx_mock.get("https://financialmodelingprep.com/stable/short-interest").mock(
+        return_value=Response(
+            200,
+            json=[
+                {"symbol": "NVDA", "date": "2026-04-30", "shortInterest": 250_000_000,
+                 "shortPercentOfFloat": 0.011, "daysToCover": 1.2},
+                {"symbol": "NVDA", "date": "2026-04-15", "shortInterest": 240_000_000,
+                 "shortPercentOfFloat": 0.010, "daysToCover": 1.1},
+            ],
+        )
+    )
+    rows = await client.get_short_interest("NVDA")
+    assert rows[0]["shortInterest"] == 250_000_000
+    assert len(rows) == 2
+
+
+@respx.mock(using="httpx")
+async def test_get_short_interest_returns_empty_on_unknown_endpoint(respx_mock, client):
+    # FMP returns 404 / non-200 for an endpoint not on this plan — must not raise.
+    respx_mock.get("https://financialmodelingprep.com/stable/short-interest").mock(
+        return_value=Response(404, json={"error": "Not Found"})
+    )
+    rows = await client.get_short_interest("NVDA")
+    assert rows == []

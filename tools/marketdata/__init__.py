@@ -5,6 +5,7 @@ from typing import Any
 
 from tools.marketdata.interface import (
     Estimate, HistoricalBar, KeyMetrics, Profile, Quote, Ratios, ScreenResult,
+    ShortInterest,
 )
 
 
@@ -68,6 +69,29 @@ class MarketData:
         if self.yfinance is not None:
             return self.yfinance.get_historical_prices(ticker, period=period)
         return []
+
+    def get_short_interest(self, ticker: str) -> ShortInterest:
+        """Normalized short-interest snapshot — FMP primary, yfinance fallback.
+
+        FMP's short-interest endpoint is plan-dependent; FmpClient.get_short_interest
+        already degrades any HTTP error to an empty list, and normalize_short_interest
+        returns {} for a row with no usable signal. Either case (or a raised
+        exception) falls through to yfinance, matching the other facade methods.
+        """
+        from tools.marketdata.fmp import normalize_short_interest
+        if self.fmp is not None:
+            try:
+                raw = asyncio.run(self.fmp.get_short_interest(ticker))
+            except Exception:
+                raw = None
+            # Mocks may already return the ShortInterest shape; raw FMP rows need normalization.
+            result = raw if isinstance(raw, dict) and "shares_short" in raw \
+                else normalize_short_interest(raw)
+            if result:
+                return result
+        if self.yfinance is not None:
+            return self.yfinance.get_short_interest(ticker)
+        return {}
 
     def get_peers(self, ticker: str) -> list[str]:
         """FMP-only — yfinance has no peers endpoint."""
