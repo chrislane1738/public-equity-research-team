@@ -1,38 +1,45 @@
 ---
-description: Run the full 10-agent deep-dive workflow on a ticker
+description: Run the full deep-dive workflow on a ticker, with two mandatory human-in-the-loop pause checkpoints before research dispatches
 argument-hint: <TICKER>
 ---
 
-Run a deep-dive on `$1` following the pipeline below. The ticker is uppercase
-and validated against `MarketData.get_profile($1)` before any work begins.
+Run a deep-dive on `$1`. This pipeline has **two mandatory pause points** where the orchestrator (you) stops and prompts the user before continuing. The pauses exist so we never dispatch the 5 research pods on bad data or bad comps.
 
-> **Note:** This pipeline runs the accountant first as the ground-truth step;
-> all downstream agents anchor on its reconciled SEC data and red-flag findings.
+> **Note:** the accountant runs first as the ground-truth step; the user reviews its findings + provides a peer list; only then do the research agents fire.
 
-1. Confirm the ticker resolves via `MarketData.get_profile($1)`. If profile is
-   empty, halt and report.
-2. **Dispatch `accountant` skill as a subagent (Agent tool, single call).** This
-   pulls SEC filings, reconciles them against FMP, audits for red flags, and
-   downloads the latest earnings presentation. **All subsequent agents depend on
-   its outputs.** Wait for it to complete before proceeding.
-3. Dispatch `fundamentals` skill as a subagent. (Now reads
-   `accountant/reconciliation.json` and prefers SEC over FMP on divergent line
-   items; reads `accountant/filings/earnings_presentation_*.pdf` for KPI
-   grounding.)
-4. After fundamentals returns, dispatch FIVE subagents in parallel (single
-   message, multiple Agent calls): `industry-moat`, `comps`, `macro`,
-   `risk-upside`, `technicals`.
-5. After `comps` returns `comps/peer-multiples.json`, dispatch `dcf` as a
-   subagent.
-6. Once every section.md is on disk (including `accountant/section.md`), invoke
-   `md-synthesis` skill (in-context; not a subagent). The synthesis now reads
-   `accountant/red-flags.md` and surfaces High-severity flags in the executive
-   summary.
-7. Dispatch `deck-builder` and `memo-builder` as TWO subagents in parallel.
-   Both will produce a dedicated "Accounting Audit Summary" section/slide using
-   `accountant/section.md` and `accountant/red-flags.md`.
-8. Invoke `synthesize-html` skill (in-context) to assemble `report.html`.
-9. Report the final path to the user.
+## Pipeline
 
-If any stage fails, follow the failure-handling rules in
-`docs/superpowers/specs/2026-05-13-skill-based-migration-design.md` §16.
+1. **Validate ticker.** Confirm `MarketData.get_profile($1)` returns non-empty. If empty, halt and report.
+
+2. **Dispatch `accountant` skill as a subagent (Agent tool, single call).** This pulls SEC filings (most recent FY 10-K + most recent 10-Q), reconciles them line-by-line against FMP, audits for red flags, and downloads the latest IR earnings presentation. Wait for the accountant to return one of three signals: `CLEAN`, `PAUSE_FOR_REVIEW`, or `FMP_ONLY_FALLBACK`.
+
+3. **PAUSE CHECKPOINT A — present accountant findings to the user.** Read `accountant/section.md`, `accountant/reconciliation.json`, and the top items in `accountant/red-flags.md`. Present to the user:
+
+   - **If `CLEAN`:** a one-paragraph summary ("Accountant pass clean — N line items reconciled, K Medium/High-severity red flags. Proceed?").
+   - **If `PAUSE_FOR_REVIEW`:** the divergent items in a structured list with SEC value, FMP value, and delta %. Ask the user **per concept** which value to use (SEC, FMP, or manual override). Record the resolutions — downstream agents (fundamentals, comps, dcf) must respect them.
+   - **If `FMP_ONLY_FALLBACK`:** note that SEC reconciliation was skipped (foreign listing or no XBRL). Ask the user whether to proceed on FMP data alone or abort.
+
+   **Wait for the user's explicit confirmation before continuing.** Do not auto-proceed.
+
+4. **PAUSE CHECKPOINT B — request the peer list for comps.** Ask the user: *"Provide the peer ticker list for comps (3–12 tickers, comma-separated). Example: AMD, NVDA, AVGO, ARM."* The peer list is **mandatory** — do not fall back to FMP-curated peers or LLM-picked peers. Wait for the user's response.
+
+5. **Dispatch `fundamentals` skill as a subagent.** Pass any reconciliation overrides from Checkpoint A. Fundamentals reads `accountant/reconciliation.json`, `accountant/filings/earnings_presentation_*.pdf` for KPI grounding, and `accountant/extracted_sections/mda.txt` (canonical MD&A). Wait for it to return.
+
+6. **Dispatch the 5 research pods in parallel** (single message, multiple Agent tool calls): `industry-moat`, `comps`, `macro`, `risk-upside`, `technicals`. Pass the user-supplied peer list to `comps` explicitly. Pass any Checkpoint-A resolutions to `risk-upside` so red flags are referenced in its bull/bear case.
+
+7. **Dispatch `dcf`** as a subagent once `comps/peer-multiples.json` exists on disk. DCF reads canonical TTM + live_quote from `fundamentals/financials.json`.
+
+8. **Invoke `md-synthesis` skill in-context (not a subagent).** Read all section.md files (canonical order: accountant, fundamentals, industry, dcf, comps, macro, risk, technicals) plus `_synthesis.md` inputs. Write `synthesis/_synthesis.md`. The synthesis surfaces any High-severity red flags in the executive summary.
+
+9. **Dispatch `deck-builder` and `memo-builder`** as two parallel subagents. Both consume the synthesis + accountant outputs and produce the dedicated "Accounting Audit Summary" section/slide.
+
+10. **Invoke `synthesize-html` skill in-context.** Assemble `<TICKER>/report.html`.
+
+11. Report the final path to the user.
+
+## Failure handling
+
+- Pod fails (one of the 5 parallel): note in synthesis, continue with the rest.
+- Accountant returns `FMP_ONLY_FALLBACK` and user declines to proceed: halt cleanly with no artifacts beyond accountant outputs.
+- User does not respond to Checkpoint A or B within the session: stop; do not auto-proceed.
+- Reference `docs/superpowers/specs/2026-05-13-skill-based-migration-design.md` §16 for stage-level failure rules.
