@@ -49,24 +49,16 @@ markers in your reasoning.
 
 ### Step 1 — Resolve ticker to CIK
 
-The CIK is required for all EDGAR calls. Resolve it as follows:
+```python
+cik = await edgar.lookup_cik(ticker)
+```
 
-1. Call `MarketData.get_profile(ticker)` (via FmpClient). The FMP profile response
-   does **not** directly return a CIK — use it to confirm the ticker is valid and
-   retrieve the company name for downstream searches.
-2. Resolve the CIK via the SEC's company search: `WebFetch` the URL
-   `https://efts.sec.gov/LATEST/search-index?q=%22<TICKER>%22&dateRange=custom&startdt=2020-01-01&forms=10-K`
-   or use `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=&CIK=<TICKER>&type=10-K&dateb=&owner=include&count=10&search_text=`
-   and parse the `CIK` field from the JSON or HTML response.
-3. Alternatively, fetch `https://data.sec.gov/submissions/CIK<ZERO-PADDED-CIK>.json`
-   — but since you need the CIK first, use the EDGAR full-text search API:
-   `GET https://efts.sec.gov/LATEST/search-index?q=%22<TICKER>%22&forms=10-K`
-   and parse `entity.cik` from the first hit.
-4. **Halt condition:** if no CIK is found after attempting both lookup routes,
-   stop and return: `Halt — no CIK found for <TICKER>. Likely foreign listing,
-   OTC-only ticker, or invalid symbol.`
+`lookup_cik` returns a 10-digit zero-padded string for any US-listed ticker in SEC's official mapping, or `None` for tickers not present (typically foreign-listed without ADRs).
 
-Store the CIK as a zero-padded 10-digit string for all subsequent calls.
+- **If `cik` is a string:** proceed with the full SEC reconciliation workflow (Steps 2–8).
+- **If `cik` is `None`:** drop into **FMP-only fallback mode**. Skip Steps 2–6 and Step 8 (all SEC pulls and the 10-K section extracts). Still execute Step 7 (IR earnings presentation download) and Step 9 (red-flag audit, but only on data accessible from FMP + IR materials). In Step 10, write `reconciliation.json` with `"mode": "fmp_only"`, an empty `line_items` array, and a top-of-`section.md` note: *"Foreign-listed or non-SEC-registered ticker — SEC reconciliation skipped. Findings based on FMP data + IR earnings presentation only."*
+
+Store the CIK (or `None`) for downstream steps. **Do not halt on a missing CIK.**
 
 ### Step 2 — List recent filings
 
@@ -87,12 +79,15 @@ log a `CRITICAL DATA GAP — 10-K stale (>18 months)` warning at the top of
 
 ### Step 3 — Pull XBRL company facts
 
+**Reconciliation scope:** ONLY the most recent fiscal-year 10-K period and the most recent 10-Q period. Do not reconcile every historical quarter — the accountant's job is to validate the two most-recent reports against FMP, not audit the full history.
+
 Call `get_company_facts(cik)`. The response contains a nested dict keyed by
-taxonomy (`us-gaap`) then by concept name. For each concept below, extract the
-most recent value at **annual** (`form: "10-K"`, `fp: "FY"`) and the most
-recent four values at **quarterly** (`form: "10-Q"`, `fp: "Q1"/"Q2"/"Q3"`
-or `fp: "Q4"` where present) granularity. Capture: `value`, `end` (period end
-date), `accn` (accession number), `form`, `filed` date.
+taxonomy (`us-gaap`) then by concept name. For each concept below, extract:
+
+1. **The most recent annual value** (`form: "10-K"`, `fp: "FY"`) — period end matches the most recent 10-K identified in Step 2.
+2. **The most recent quarterly value** (`form: "10-Q"`) — period end matches the most recent 10-Q identified in Step 2.
+
+For each, capture: `value`, `end` (period end date), `accn` (accession number), `form`, `filed` date. **Note: only these two periods per concept — do not pull historical quarters here.** (Historical context is the fundamentals/comps agents' job.)
 
 **Target GAAP concepts:**
 
@@ -126,15 +121,17 @@ entry with the latest `filed` date (amended filings take precedence).
 
 Using `FmpClient._get(endpoint, ticker, params)` via asyncio, fetch:
 
-**Quarterly (for per-quarter reconciliation):**
-- `income-statement-quarterly` — `{'limit': 8}`
-- `balance-sheet-statement-quarterly` — `{'limit': 8}`
-- `cash-flow-statement-quarterly` — `{'limit': 8}`
+**Quarterly:**
+- `income-statement-quarterly` — `{'limit': 4}`
+- `balance-sheet-statement-quarterly` — `{'limit': 4}`
+- `cash-flow-statement-quarterly` — `{'limit': 4}`
 
-**Annual (for annual reconciliation):**
-- `income-statement` — `{'limit': 5}`
-- `balance-sheet-statement` — `{'limit': 5}`
-- `cash-flow-statement` — `{'limit': 5}`
+**Annual:**
+- `income-statement` — `{'limit': 3}`
+- `balance-sheet-statement` — `{'limit': 3}`
+- `cash-flow-statement` — `{'limit': 3}`
+
+The reconciliation in Step 5 uses only the most recent quarterly and most recent annual values. The extra periods exist for the red-flag audit's YoY/trend checks (RF-03 DSO, RF-04 DIO, RF-05 DPO, RF-11 SBC, RF-13 ETR).
 
 Map FMP field names to SEC GAAP concepts as follows (representative mappings;
 adjust if FMP column names differ):
@@ -163,10 +160,9 @@ adjust if FMP column names differ):
 **Do NOT use FMP's `key-metrics` or `ratios` endpoints** — those snapshot at
 fiscal period-end and silently go stale. Use raw 3-statement endpoints only.
 
-### Step 5 — Reconcile SEC vs FMP line-by-line
+### Step 5 — Reconcile SEC vs FMP (scoped to most recent FY + most recent Q)
 
-For each GAAP concept pulled in Step 3, match the most recent period with the
-corresponding FMP period (matched on `period_end` date ± 7 days). Compute:
+Reconciliation is scoped to **two periods only**: the most recent FY 10-K period and the most recent 10-Q period. For each GAAP concept pulled in Step 3, match each of those two SEC values with its corresponding FMP value (matched on `period_end` date ± 7 days, with the FMP period selected from the matching annual or quarterly statement). Compute:
 
 ```
 delta_pct = abs(sec_value - fmp_value) / abs(sec_value) * 100
@@ -219,10 +215,32 @@ all downstream agents (fundamentals, comps, dcf, risk-upside) must use
 on the likely source of difference (e.g., reclassification, segment restatement,
 timing of amendment filing).
 
-**RECONCILIATION FAILURE condition:** if `summary.divergent >= 5`, prepend a
-`# ⚠ RECONCILIATION FAILURE` header to `section.md` with the count and the
-top divergent concepts listed. This alerts the Managing Director and all
-downstream agents.
+**Pause-on-discrepancy contract (mandatory):** if `summary.divergent >= 1` —
+i.e., ANY line item is DIVERGENT — the accountant's return value to the
+Managing Director MUST be the structured signal:
+
+```
+PAUSE_FOR_REVIEW
+divergent_count: <N>
+divergent_items: <comma-separated concept names>
+top_delta_pcts: <N1%, N2%, N3% — top three by absolute delta>
+```
+
+This signals the MD to halt the workflow and surface the divergences to the
+user for explicit resolution before any downstream agent dispatches. The MD
+will ask the user, per concept: "Use SEC value, FMP value, or manual override?"
+The accountant does NOT auto-resolve divergences.
+
+If `summary.divergent == 0`, return:
+
+```
+CLEAN
+total_line_items: <N>
+```
+
+Either way, the artifacts (`reconciliation.json`, `red-flags.md`, `section.md`)
+are written before returning the signal — the MD can read them before prompting
+the user.
 
 ### Step 6 — Download authoritative filings
 
@@ -578,14 +596,20 @@ All artifacts are written under `~/Documents/equity-research/<TICKER>/accountant
 
 ## Stop conditions
 
-- **No CIK:** halt immediately with `Halt — no CIK found for <TICKER>. Likely
-  foreign listing or invalid ticker.`
-- **Stale 10-K (>18 months):** log `CRITICAL DATA GAP — 10-K stale (>18 months)`
-  at the top of `section.md`; continue with available data.
-- **Reconciliation failure (≥5 divergent line items):** prepend
-  `# ⚠ RECONCILIATION FAILURE` to `section.md`; continue; do not abort.
-- **Empty XBRL facts:** if `get_company_facts` returns no `us-gaap` concepts
-  (e.g., foreign private issuer), log the gap, skip Steps 3–5, and proceed
-  with FMP-only data marked as unreconciled.
-- **Download failures:** log each failure under `## Data Gaps` in `section.md`;
-  do not abort the overall workflow for a filing download error.
+- **No CIK (`lookup_cik` returns None):** drop into FMP-only fallback mode (Step 1). Skip Steps 2–6 and Step 8. Still execute Step 7 (IR earnings deck) and Step 9 (audit on available data). Write `reconciliation.json` with `"mode": "fmp_only"` and an empty `line_items` array. Return signal: `FMP_ONLY_FALLBACK`. Do NOT halt.
+- **Stale 10-K (>18 months):** log `CRITICAL DATA GAP — 10-K stale (>18 months)` at the top of `section.md`; continue with available data.
+- **Any reconciliation divergence (`divergent_count >= 1`):** return signal `PAUSE_FOR_REVIEW` to the Managing Director (per Step 5). All artifacts are written before returning; the MD prompts the user for resolution.
+- **Empty XBRL facts:** if `get_company_facts` returns no `us-gaap` concepts (e.g., foreign private issuer with a US ADR but no XBRL filings), log the gap, skip Steps 3–5, proceed with FMP-only data marked as unreconciled, and return `FMP_ONLY_FALLBACK`.
+- **Download failures:** log each failure under `## Data Gaps` in `section.md`; do not abort the overall workflow for a filing download error.
+
+## Return signals (to the Managing Director)
+
+The accountant's final message MUST be one of:
+
+| Signal | Meaning | MD action |
+|---|---|---|
+| `CLEAN` | Reconciliation passed, no DIVERGENT items | Proceed to user-prompt for peer list, then dispatch fundamentals |
+| `PAUSE_FOR_REVIEW` | One or more line items DIVERGENT | Present divergent items to user; ask which value to use per concept |
+| `FMP_ONLY_FALLBACK` | No CIK (foreign listing) or no XBRL data | Note in chat that SEC reconciliation was skipped; continue per user discretion |
+
+Include the supporting counts (`divergent_count`, `total_line_items`, top deltas) inline with the signal so the MD has the data needed for the user prompt without re-reading `reconciliation.json`.
