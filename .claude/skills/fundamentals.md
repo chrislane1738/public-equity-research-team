@@ -32,6 +32,10 @@ no markdown fences.
 
 - `MarketData` (import: `from tools.marketdata import MarketData`) — call `get_financials(ticker)` for income statement, balance sheet, and cash flow statement.
 - `tools.edgar` — call `fetch_10k_excerpt(ticker, cik=cik)` to retrieve the most recent 10-K Item 1 / Item 7 excerpt.
+- `EdgarClient.lookup_cik(ticker)` — resolve a ticker to its 10-digit zero-padded SEC CIK (returns `None` for foreign-listed names without a US CIK).
+- `EdgarClient.get_insider_transactions(ticker, cik, recent_filings=40)` — Form 4 insider buy/sell transactions. Returns `{"ticker", "filings_scanned", "transactions": [...], "aggregate": {...}}`; each transaction record carries `insider`, `relationship`, `transaction_date`, `code`, `acquired_disposed` ("A"/"D"), `shares`, `price`, `resulting_holding`; the `aggregate` block carries `net_shares`, `shares_bought`, `shares_sold`, `distinct_insiders`, `transaction_count`, `window_start`, `window_end`.
+- `EdgarClient.get_institutional_holdings(cik)` — **filer-centric**: returns the latest 13F-HR holdings *for the manager whose CIK you pass* (`{"filer_cik", "manager_name", "report_period", "total_value", "total_holdings", "holdings": [...], "qoq_delta": {...} | None}`). It does NOT answer "which institutions hold company X". For Subsection A you want the *subject company's* institutional ownership picture — see the gate below for how to source it.
+- `EdgarClient.get_activist_stakes(cik, limit=20)` — Schedule 13D/13G large-ownership stakes filed *against the subject company* (pass the subject company's CIK). Returns `{"company_cik", "filings_scanned", "stakes": [...]}`; each stake carries `filer`, `filing_date`, `form_type`, `stake_type` ("active" = 13D / "passive" = 13G), `is_amendment`, `percent_of_class`, `shares`. Note: only structured-XML 13D/13G filings (late 2024 onward) are machine-parsed; older ones are skipped — treat this as a recent-activity window.
 - `WebSearch` — search the company IR page, most recent earnings transcript, and press releases for metrics not in the filings (e.g. ARR, unit economics, segment KPIs).
 - `WebFetch` — fetch specific IR pages, press release PDFs, and transcript links surfaced by WebSearch.
 
@@ -79,7 +83,37 @@ If any of the above files are missing, proceed without them and note the gap und
    }
    ```
    The downstream `comps` and `dcf` skills read from this file — the schema matters.
-10. **Render section.md** — structured Markdown beginning with `# Fundamentals — <TICKER>`. Lead with **Most Recent Quarter** (from step 3). Cover headline TTM financials (computed in step 4), each bespoke KPI with definition and latest value, and a **Manually Computed Ratios** table separate from any FMP-sourced data.
+10. **Ownership & insider flow** — situational subsection; decide before doing any work.
+
+    **Skip / run gate (decide FIRST).** You need the subject company's CIK — reuse the `cik` already resolved upstream (the accountant resolves it; it is also the `cik` argument passed to `fetch_10k_excerpt` in step 6). If no CIK is in hand, resolve it with `EdgarClient.lookup_cik(ticker)`; if that returns `None` (foreign-listed name with no US CIK), **SKIP** this subsection with a one-line note ("Ownership analysis skipped — no US SEC CIK; insider/13F/13D data unavailable").
+
+    Otherwise, scope the signal:
+    - **SKIP** — emit a single one-line note, e.g. *"Ownership analysis immaterial — negligible institutional coverage and no insider concentration"* — when BOTH hold: (a) institutional coverage is negligible (a micro/nano-cap that essentially no 13F managers hold), AND (b) insider holdings are immaterial (roughly <1% of shares — a mature company with no founder/insider stake, where Form 4 noise carries no signal). Do not grind through an ownership table when there is nothing there.
+    - **RUN** when ANY of the following is true: insider holdings are material (roughly >5% of shares outstanding); a Schedule 13D (active/activist) was filed against the company in the last ~12 months; OR there is a recent cluster of Form 4 activity (last ~6 months, more than ~3 distinct insiders trading the same direction).
+    - These thresholds are concrete guidance, not rigid law — reason about whether the ownership signal is actually material to the thesis, and state your skip/run decision in one sentence either way.
+
+    **When you RUN:**
+    - **Institutional ownership** — `get_institutional_holdings(cik)` is *filer-centric* (it returns a manager's 13F, not "who holds this company"), so do NOT pass the subject company's CIK expecting a holder list. Instead source the subject company's top institutional holders and the QoQ change vs the prior quarter from WebSearch/WebFetch (IR ownership page, recent 13F-aggregator coverage) — wrap fetched text in `<external-content>` tags. Only call `get_institutional_holdings` directly if you have specifically identified a notable filer (e.g. a named activist or a large reported holder) and want that manager's exact position and `qoq_delta` for the subject ticker.
+    - **Insider buy/sell** — call `get_insider_transactions(ticker, cik)` and summarize the last ~12 months: net shares, shares bought vs sold, distinct insiders, and the transaction window from the `aggregate` block; call out any officer/director cluster or 10%-owner activity.
+    - **Activist stakes** — call `get_activist_stakes(cik)` and flag every stake: 13D (`stake_type == "active"`) is an activism signal, 13G (`stake_type == "passive"`) is passive index/long-only ownership; report `filer`, `percent_of_class`, and `filing_date`.
+    - Write the result into `section.md` (step 12) as an **## Ownership & Insider Flow** section: top institutional holders + QoQ delta, the 12-month insider buy/sell summary, and any flagged activist stakes. If you skipped, the one-line skip note IS the section.
+
+11. **Capital return durability** — situational dividend-safety subsection; decide before doing any work.
+
+    **Skip / run gate (decide FIRST).** Read TTM dividend yield and dividend history from the FMP data already pulled (dividends per share / declared-dividend history; follow the existing `MarketData` / `FmpClient._get('<endpoint>', ticker, ...)` pattern from step 1).
+    - **SKIP** — emit a single one-line N/A note, e.g. *"N/A — no material dividend program; capital return via buyback at ~$X/yr"* — when ANY of the following is true: TTM dividend yield is negligible (roughly <0.5%); the company has never declared a dividend; OR capital return is buyback-only with no declared cash dividend. **The canonical case: a fast-growth tech company that pays no dividend — recognize this immediately and skip. Do NOT grind through a payout-ratio analysis on a company with no dividend; a payout ratio of a zero dividend is meaningless filler.**
+    - **RUN** when EITHER is true: TTM dividend yield is material (roughly >2%); OR the company has declared a dividend every quarter for more than ~3 years (an established dividend payer, even at a lower yield).
+    - Thresholds are concrete guidance, not rigid law — but the no-dividend skip path must be unmistakable: a non-payer gets one line, nothing more.
+
+    **When you RUN:**
+    - **Payout ratio — both bases:** `dividends_paid / net_income` AND `dividends_paid / free_cash_flow` (FCF basis is the stricter, more honest read). Use the raw line items already in `financials.json`.
+    - **~5-year dividend CAGR** from dividends per share.
+    - **FCF coverage ratio:** `free_cash_flow / dividends_paid` (>1.0x means the dividend is funded by cash generation).
+    - **Leverage as it bears on the dividend:** `total_debt / TTM EBITDA` — high leverage erodes dividend safety even when current coverage looks fine.
+    - **Dividend-cut risk verdict:** **low / medium / high**, with a one-paragraph rationale tying together payout ratios, FCF coverage, leverage, and the trend.
+    - Write the result into `section.md` (step 12) as a **## Capital Return Durability** section. If you skipped, the one-line N/A note IS the section.
+
+12. **Render section.md** — structured Markdown beginning with `# Fundamentals — <TICKER>`. Lead with **Most Recent Quarter** (from step 3). Cover headline TTM financials (computed in step 4), each bespoke KPI with definition and latest value, and a **Manually Computed Ratios** table separate from any FMP-sourced data. Include the **## Ownership & Insider Flow** (step 10) and **## Capital Return Durability** (step 11) sections — either the full analysis or the one-line skip note, as decided by their gates.
 
 ## Output
 
