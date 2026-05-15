@@ -126,8 +126,8 @@ def test_yfinance_get_short_interest_returns_normalized_shape(mock_yf):
     assert si["as_of_date"] == "2024-04-30"
     assert si["prior_as_of_date"] == "2024-03-31"
     assert si["source"] == "yfinance"
-    # prior short % of float derived from prior shares short over float
-    assert si["prior_short_percent_of_float"] == pytest.approx(45_000_000 / 238_000_000)
+    # yfinance does not supply a true prior-period float, so this is always None.
+    assert si["prior_short_percent_of_float"] is None
 
 
 @patch("tools.marketdata.yfinance.yf")
@@ -212,3 +212,82 @@ def test_market_data_short_interest_falls_back_to_yfinance_when_fmp_raises():
 
     assert si["source"] == "yfinance"
     yf.get_short_interest.assert_called_once_with("GME")
+
+
+# ---------------------------------------------------------------------------
+# Scale-contract tests (Fix 1 + Fix 2 — short_percent_of_float always 0.0–1.0)
+# ---------------------------------------------------------------------------
+
+from tools.marketdata.fmp import normalize_short_interest  # noqa: E402
+
+
+def test_fmp_normalize_short_interest_fraction_passthrough():
+    """FMP fraction-form input (0.011) is preserved as-is."""
+    rows = [
+        {"symbol": "NVDA", "date": "2026-04-30", "shortInterest": 250_000_000,
+         "shortPercentOfFloat": 0.011, "daysToCover": 1.2},
+        {"symbol": "NVDA", "date": "2026-04-15", "shortInterest": 240_000_000,
+         "shortPercentOfFloat": 0.010, "daysToCover": 1.1},
+    ]
+    si = normalize_short_interest(rows)
+    pct = si["short_percent_of_float"]
+    prior_pct = si["prior_short_percent_of_float"]
+    assert 0.0 <= pct <= 1.0, f"short_percent_of_float out of range: {pct}"
+    assert 0.0 <= prior_pct <= 1.0, f"prior_short_percent_of_float out of range: {prior_pct}"
+    assert pct == pytest.approx(0.011)
+    assert prior_pct == pytest.approx(0.010)
+
+
+def test_fmp_normalize_short_interest_percentage_form_is_divided_by_100():
+    """FMP percentage-form input (21.0 for 21%) is scaled down to a fraction (0.21)."""
+    rows = [
+        {"symbol": "GME", "date": "2026-04-30", "shortInterest": 50_000_000,
+         "shortPercentOfFloat": 21.0, "daysToCover": 4.5},
+        {"symbol": "GME", "date": "2026-04-15", "shortInterest": 45_000_000,
+         "shortPercentOfFloat": 18.9, "daysToCover": 4.0},
+    ]
+    si = normalize_short_interest(rows)
+    pct = si["short_percent_of_float"]
+    prior_pct = si["prior_short_percent_of_float"]
+    assert pct == pytest.approx(0.21), f"Expected 0.21, got {pct}"
+    assert prior_pct == pytest.approx(0.189), f"Expected 0.189, got {prior_pct}"
+    assert 0.0 <= pct <= 1.0
+    assert 0.0 <= prior_pct <= 1.0
+
+
+@patch("tools.marketdata.yfinance.yf")
+def test_yfinance_normalize_short_interest_fraction_in_range(mock_yf):
+    """yfinance short_percent_of_float is always in 0.0–1.0."""
+    mock_ticker = MagicMock()
+    mock_ticker.info = {
+        "symbol": "GME",
+        "sharesShort": 50_000_000,
+        "shortPercentOfFloat": 0.21,
+        "shortRatio": 4.5,
+    }
+    mock_yf.Ticker.return_value = mock_ticker
+
+    si = YFinanceClient().get_short_interest("GME")
+    pct = si["short_percent_of_float"]
+    assert 0.0 <= pct <= 1.0, f"short_percent_of_float out of range: {pct}"
+    assert pct == pytest.approx(0.21)
+
+
+@patch("tools.marketdata.yfinance.yf")
+def test_yfinance_prior_short_percent_of_float_is_none_when_no_prior_float(mock_yf):
+    """yfinance path emits None for prior_short_percent_of_float (no genuine prior float)."""
+    mock_ticker = MagicMock()
+    mock_ticker.info = {
+        "symbol": "GME",
+        "sharesShort": 50_000_000,
+        "shortPercentOfFloat": 0.21,
+        "sharesShortPriorMonth": 45_000_000,  # prior shares present but no prior float
+        "floatShares": 238_000_000,           # current float only
+        "shortRatio": 4.5,
+    }
+    mock_yf.Ticker.return_value = mock_ticker
+
+    si = YFinanceClient().get_short_interest("GME")
+    assert si["prior_short_percent_of_float"] is None
+    # prior_shares_short should still be populated
+    assert si["prior_shares_short"] == 45_000_000

@@ -4,7 +4,7 @@ from typing import Any
 
 import yfinance as yf  # type: ignore[import-untyped]
 
-from tools.marketdata.interface import HistoricalBar, Profile, Quote, ShortInterest
+from tools.marketdata.interface import HistoricalBar, Profile, Quote, ShortInterest, _to_float
 
 
 def _yf_date(value) -> str:
@@ -61,10 +61,16 @@ class YFinanceClient:
         Yahoo exposes ``sharesShort``, ``shortRatio`` (days-to-cover),
         ``shortPercentOfFloat``, ``sharesShortPriorMonth`` and the corresponding
         dates. days-to-cover falls back to ``sharesShort / averageVolume`` when
-        ``shortRatio`` is absent. The prior period's short % of float is not
-        published directly, so it is derived from ``sharesShortPriorMonth /
-        floatShares`` when float is available. Returns ``{}`` when Yahoo carries
-        no short-interest signal at all.
+        ``shortRatio`` is absent.
+
+        ``prior_short_percent_of_float`` is ``None`` in the yfinance path:
+        Yahoo does not publish a float figure as of the prior settlement date,
+        so any derivation (prior shares / current float) would be inconsistent
+        with the prior-period observation it claims to represent. Callers that
+        want a trend signal should compare ``shares_short`` vs
+        ``prior_shares_short`` instead.
+
+        Returns ``{}`` when Yahoo carries no short-interest signal at all.
         """
         info = yf.Ticker(ticker).info or {}
         shares_short = info.get("sharesShort")
@@ -72,29 +78,25 @@ class YFinanceClient:
         if shares_short in (None, "") and pct_float in (None, ""):
             return {}
 
-        shares_short_f = float(shares_short) if shares_short not in (None, "") else None
-        days_to_cover = info.get("shortRatio")
-        days_to_cover_f = float(days_to_cover) if days_to_cover not in (None, "") else None
+        shares_short_f = _to_float(shares_short)
+        days_to_cover_f = _to_float(info.get("shortRatio"))
         if days_to_cover_f is None:
-            avg_vol = info.get("averageVolume")
+            avg_vol = _to_float(info.get("averageVolume"))
             if shares_short_f is not None and avg_vol:
-                days_to_cover_f = shares_short_f / float(avg_vol)
+                days_to_cover_f = shares_short_f / avg_vol
 
-        prior_shares = info.get("sharesShortPriorMonth")
-        prior_shares_f = float(prior_shares) if prior_shares not in (None, "") else None
-        prior_pct_float = None
-        float_shares = info.get("floatShares")
-        if prior_shares_f is not None and float_shares:
-            prior_pct_float = prior_shares_f / float(float_shares)
+        prior_shares_f = _to_float(info.get("sharesShortPriorMonth"))
 
         return {
             "symbol": info.get("symbol", ticker),
             "shares_short": shares_short_f,
-            "short_percent_of_float": float(pct_float) if pct_float not in (None, "") else None,
+            "short_percent_of_float": _to_float(pct_float),
             "days_to_cover": days_to_cover_f,
             "as_of_date": _yf_date(info.get("dateShortInterest")),
             "prior_shares_short": prior_shares_f,
-            "prior_short_percent_of_float": prior_pct_float,
+            # yfinance does not supply the float as of the prior settlement
+            # date, so no genuine prior % of float can be computed here.
+            "prior_short_percent_of_float": None,
             "prior_as_of_date": _yf_date(info.get("sharesShortPreviousMonthDate")),
             "source": "yfinance",
         }

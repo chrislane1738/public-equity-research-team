@@ -7,6 +7,21 @@ client. Skills consume these and never see raw FMP/yfinance payloads.
 from typing import TypedDict
 
 
+def _to_float(value) -> float | None:
+    """Coerce *value* to a plain float, or ``None`` when the value is absent/blank.
+
+    Handles the ``"None"``-string case that bare ``float()`` would raise on.
+    Both the FMP and yfinance normalizers import this from here so the
+    coercion logic lives in exactly one place.
+    """
+    if value in (None, "", "None"):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 class Profile(TypedDict, total=False):
     symbol: str
     company_name: str
@@ -71,11 +86,19 @@ class ScreenResult(TypedDict, total=False):
 class ShortInterest(TypedDict, total=False):
     """Normalized short-interest snapshot for a single ticker.
 
-    `short_percent_of_float` is a fraction (0.0–1.0), e.g. 0.042 == 4.2% of float.
-    `days_to_cover` is the short ratio (shares short / avg daily volume); null if
-    neither the provider supplies it nor average daily volume is available.
-    The `prior_*` fields are the previous FINRA settlement period (~30 days back)
-    so a caller can compute a short-interest trend/delta.
+    ``short_percent_of_float`` is always a fraction (0.0–1.0), e.g. 0.042 == 4.2%
+    of float.  Both the FMP and yfinance normalizers guarantee this range.
+
+    ``days_to_cover`` is the short ratio (shares short / avg daily volume); ``None``
+    if neither the provider supplies it nor average daily volume is available.
+
+    The ``prior_*`` fields represent the previous FINRA settlement period (~30 days
+    back) and are used by callers to compute a short-interest trend/delta.
+
+    ``prior_short_percent_of_float`` may be ``None`` when a provider does not
+    supply a true prior-period float (e.g. yfinance).  In that case, callers
+    should compute the trend from ``shares_short`` vs ``prior_shares_short``
+    rather than relying on the percent-of-float comparison.
     """
     symbol: str
     short_percent_of_float: float        # fraction of float sold short
@@ -83,6 +106,6 @@ class ShortInterest(TypedDict, total=False):
     shares_short: float                  # absolute shares sold short
     as_of_date: str                      # ISO yyyy-mm-dd of the current data point
     prior_shares_short: float            # shares short, prior period
-    prior_short_percent_of_float: float  # short % of float, prior period
+    prior_short_percent_of_float: float  # short % of float, prior period; may be None
     prior_as_of_date: str                # ISO yyyy-mm-dd of the prior data point
     source: str                          # "fmp" or "yfinance"

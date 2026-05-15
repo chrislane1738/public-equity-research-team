@@ -167,7 +167,7 @@ class FmpClient:
 # ---------------------------------------------------------------------------
 
 from tools.marketdata.interface import (  # noqa: E402
-    HistoricalBar, Profile, Quote, ShortInterest,
+    HistoricalBar, Profile, Quote, ShortInterest, _to_float,
 )
 
 
@@ -204,16 +204,6 @@ def normalize_quote(raw: dict) -> Quote:
     }
 
 
-def _to_float(value) -> float | None:
-    """Coerce to a plain float, or None when the value is absent/blank."""
-    if value in (None, "", "None"):
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
 def normalize_short_interest(rows) -> ShortInterest:
     """FMP /stable/short-interest (list, newest first) → ShortInterest shape.
 
@@ -244,16 +234,28 @@ def normalize_short_interest(rows) -> ShortInterest:
         if shares_short is not None and avg_vol:
             days_to_cover = shares_short / avg_vol
 
+    # FMP's scale for shortPercentOfFloat is unverified — some tiers return a
+    # percentage (21.0 for 21%) while yfinance returns a fraction (0.21).
+    # Guard: if the value is >1.0, divide by 100 to normalise to a fraction.
+    # A genuine short interest above 100% of float is effectively impossible,
+    # so this clamp is safe and keeps both paths on the same 0.0–1.0 contract.
+    def _frac(v: float | None) -> float | None:
+        if v is not None and v > 1.0:
+            return v / 100.0
+        return v
+
+    prior_pct_float = _to_float(
+        _pick(prior, "shortPercentOfFloat", "shortInterestRatio", "shortFloatPercent"))
+
     si: ShortInterest = {
         "symbol": str(_pick(cur, "symbol") or "").upper(),
         "shares_short": shares_short,
-        "short_percent_of_float": pct_float,
+        "short_percent_of_float": _frac(pct_float),
         "days_to_cover": days_to_cover,
         "as_of_date": str(_pick(cur, "date", "settlementDate", "recordDate") or ""),
         "prior_shares_short": _to_float(
             _pick(prior, "shortInterest", "sharesShort", "totalShortInterest")),
-        "prior_short_percent_of_float": _to_float(
-            _pick(prior, "shortPercentOfFloat", "shortInterestRatio", "shortFloatPercent")),
+        "prior_short_percent_of_float": _frac(prior_pct_float),
         "prior_as_of_date": str(_pick(prior, "date", "settlementDate", "recordDate") or ""),
         "source": "fmp",
     }
