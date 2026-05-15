@@ -383,10 +383,11 @@ revenue. Escalate severity per the triggers above when a footnote discloses such
 a change. (This sub-pass shares the same footnote read as the RF-08 footnote
 walk — run the walk once and route findings to whichever RF they bear on.)
 
-**Sub-pass — Conf-call analyst-Q&A sentiment (revenue-recognition leg).** Parse
-the Q&A section of the latest earnings call transcript (extracted text saved by
-Step 7, or `WebSearch` for `"<COMPANY NAME> Q[N] [YEAR] earnings call transcript"`
-and `WebFetch` the top result). Flag at **Medium** severity if analysts visibly
+**Sub-pass — Conf-call analyst-Q&A sentiment (revenue-recognition leg) (all modes).** Parse
+the Q&A section of the latest earnings call transcript (`WebSearch` for
+`"<COMPANY NAME> Q[N] [YEAR] earnings call transcript"` and `WebFetch` the top
+result; if Step 7 incidentally captured a transcript in the earnings-presentation
+text, use that instead). Flag at **Medium** severity if analysts visibly
 push back on a revenue-quality question — repeated questions on the durability,
 pull-forward, or one-time nature of revenue, on bookings-vs-revenue conversion,
 or on a recognition-policy change — and management's answer is evasive (redirects
@@ -410,16 +411,16 @@ using XBRL values.
 
 Include the per-quarter table in the evidence.
 
-**Sub-pass — Conf-call analyst-Q&A sentiment (cash-conversion leg).** Using the
+**Sub-pass — Conf-call analyst-Q&A sentiment (cash-conversion leg) (all modes).** Using the
 same earnings-call Q&A read as the RF-01 sub-pass, flag at **Medium** severity if
 analysts repeatedly probe cash conversion, free-cash-flow quality, working-capital
 swings, or the gap between earnings and cash — and management dodges (redirects
 to adjusted/non-GAAP figures, defers the answer, or declines to quantify). Two or
 more distinct analysts pressing the same cash-quality point, or the same analyst
 re-asking after a non-answer, is the trigger. Capture the analyst name, the
-question, and the (non-)answer as evidence. Treat a confirmed dodge on cash
-conversion as corroborating evidence that elevates a Medium accruals finding
-toward High.
+question, and the (non-)answer as evidence. If RF-02's quantitative trigger is
+at Medium and the Q&A reveals a confirmed management dodge on cash conversion,
+raise the RF-02 finding to High.
 
 ---
 
@@ -470,8 +471,8 @@ check above catches *named* reorganizations; this sub-pass catches *silent* mix
 shifts and segment-count changes in the XBRL data. Call
 `EdgarClient.get_segment_facts(ticker, cik)` — it parses the latest 10-K's
 dimensional XBRL against the reportable-segments axis and returns
-`{"segments": [...], "facts": [{"segment", "concept", "label", "value",
-"period_start", "period_end"}, ...]}`. From `facts`, for each reportable segment
+`{"ticker", "segment_axis", "segments": [...], "facts": [{"segment", "concept",
+"label", "value", "period_start", "period_end"}, ...]}`. From `facts`, for each reportable segment
 isolate the revenue concept (a `RevenueFromContractWithCustomer*` concept) and the
 operating-income concept (`OperatingIncomeLoss`), and for the two most recent
 annual periods compute each segment's share of the company total
