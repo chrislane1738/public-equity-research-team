@@ -1495,3 +1495,55 @@ async def test_get_segment_facts_live(client):
     for fact in result["facts"]:
         assert fact["segment"]
         assert fact["concept"]
+
+
+# ---------------------------------------------------------------------------
+# Unit tests for _coerce_number (Fixes 1, 2, 3)
+# ---------------------------------------------------------------------------
+
+def test_coerce_number_numpy_float64_returns_plain_float():
+    """Fix 1 — numpy.float64 must come back as a plain Python float."""
+    import numpy as np
+    from tools.edgar import _coerce_number
+
+    result = _coerce_number(np.float64(2.5))
+    assert result == 2.5
+    assert type(result) is float, f"expected plain float, got {type(result)}"
+
+
+def test_coerce_number_numpy_int64_returns_plain_int():
+    """Fix 1 — numpy.int64 must come back as a plain Python int."""
+    import numpy as np
+    from tools.edgar import _coerce_number
+
+    result = _coerce_number(np.int64(42))
+    assert result == 42
+    assert type(result) is int, f"expected plain int, got {type(result)}"
+
+
+def test_coerce_number_inf_returns_none():
+    """Fix 2 — float('inf') is not JSON-safe and must return None."""
+    from tools.edgar import _coerce_number
+
+    assert _coerce_number(float("inf")) is None
+
+
+def test_coerce_number_neg_inf_returns_none():
+    """Fix 2 — float('-inf') is not JSON-safe and must return None."""
+    from tools.edgar import _coerce_number
+
+    assert _coerce_number(float("-inf")) is None
+
+
+def test_coerce_number_numpy_bool_returns_plain_bool():
+    """Fix 3 — numpy.bool_ must return a plain Python bool, not 1/0."""
+    import numpy as np
+    from tools.edgar import _coerce_number
+
+    result = _coerce_number(np.bool_(True))
+    assert result is True
+    assert type(result) is bool, f"expected plain bool, got {type(result)}"
+
+    result_false = _coerce_number(np.bool_(False))
+    assert result_false is False
+    assert type(result_false) is bool

@@ -26,6 +26,7 @@ get_segment_facts       — segment-level XBRL facts (revenue/op-income by segme
 import asyncio
 import html as _html
 import json
+import math
 import re
 import time
 import warnings
@@ -1145,18 +1146,30 @@ def _coerce_number(value: Any) -> Any:
             return None
     except (TypeError, ValueError):
         pass
-    if isinstance(value, bool):
+    # Fix 3: numpy.bool_ is not a Python bool subclass — handle it before the
+    # int/float branches so it doesn't silently become 1/0.
+    try:
+        import numpy as _np  # noqa: PLC0415 — lazy import, numpy may be absent
+        if isinstance(value, _np.bool_):
+            return bool(value)
+    except ImportError:
+        pass
+    # Fix 1: Use exact type checks so numpy scalars (subclasses of int/float)
+    # fall through to explicit coercion below rather than being returned raw.
+    if type(value) is bool:  # noqa: E721
         return value
-    if isinstance(value, int):
+    if type(value) is int:  # noqa: E721
         return value
-    if isinstance(value, float):
-        return value
+    if type(value) is float:  # noqa: E721
+        # Fix 2: plain Python float — still guard against inf/-inf.
+        return None if not math.isfinite(value) else value
     # Decimal, numpy scalars, numeric strings.
     try:
         f = float(value)
     except (TypeError, ValueError):
         return None
-    if f != f:  # NaN after coercion
+    # Fix 2: reject NaN and ±inf — both are non-finite.
+    if not math.isfinite(f):
         return None
     return int(f) if f.is_integer() else f
 
