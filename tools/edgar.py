@@ -18,6 +18,10 @@ download_filing_document — download a single filing document to disk
 extract_filing_section  — parse Item sections from a 10-K/10-Q HTML string
 extract_filing_section_pdf — same but for PDF-format filings (pypdf-based)
 extract_filing_section_auto — auto-dispatch by file extension (.htm/.html/.pdf)
+get_insider_transactions — Form 4 insider buy/sell transactions + aggregate
+get_institutional_holdings — latest 13F-HR holdings for a filer + QoQ delta
+get_activist_stakes     — Schedule 13D/13G large-ownership stakes for a company
+get_segment_facts       — segment-level XBRL facts (revenue/op-income by segment)
 """
 import asyncio
 import html as _html
@@ -454,6 +458,596 @@ class EdgarClient:
         return "\n\n---\n\n".join(fallback_chunks)
 
     # ------------------------------------------------------------------
+    # 2.8 — Insider transactions (Form 4)
+    # ------------------------------------------------------------------
+
+    async def get_insider_transactions(
+        self,
+        ticker: str,
+        cik: str,
+        recent_filings: int = 40,
+    ) -> dict:
+        """Return Form 4 insider buy/sell transactions for a company.
+
+        Pulls the ``recent_filings`` most-recent Form 4 filings for the
+        company (via edgartools' ``Company.get_filings(form="4")``), parses
+        each into an edgartools ``Form4`` object, and flattens every
+        non-derivative transaction line into a structured record.
+
+        Args:
+            ticker: company ticker (preferred edgartools identifier).
+            cik:    zero-padded or bare CIK (used as fallback identifier).
+            recent_filings: how many of the most-recent Form 4 filings to
+                read. Default 40 — roughly a quarter of insider activity for
+                an actively-traded large cap. Form 4 filings are numerous so
+                this is bounded by a filing count, not a date window.
+
+        Returns a JSON-serializable dict::
+
+            {
+              "ticker": "NVDA",
+              "filings_scanned": 40,
+              "transactions": [
+                {
+                  "insider": "Huang Jen-Hsun",
+                  "relationship": "Director / Officer (President & CEO)",
+                  "transaction_date": "2024-06-13",
+                  "code": "S",                # SEC transaction code
+                  "code_description": "Open market or private sale",
+                  "acquired_disposed": "D",   # "A" acquired / "D" disposed
+                  "shares": 120000.0,
+                  "price": 130.45,
+                  "resulting_holding": 8593e3, # shares held after the trade
+                  "security": "Common Stock",
+                  "accession_number": "0001045810-24-000077"
+                },
+                ...
+              ],
+              "aggregate": {
+                "net_shares": -240000.0,      # shares acquired minus disposed
+                "shares_bought": 0.0,
+                "shares_sold": 240000.0,
+                "distinct_insiders": 5,
+                "transaction_count": 12,
+                "window_start": "2024-03-01", # earliest transaction date
+                "window_end": "2024-06-13"    # latest transaction date
+              }
+            }
+
+        ``net_shares``/``shares_bought``/``shares_sold`` are summed across all
+        non-derivative transaction lines regardless of code (A vs D), giving a
+        true net-position change. The result is cached on disk for 24h.
+        """
+        cik_padded = cik.zfill(10)
+        cache_file = self._cache_path(
+            f"insider_{cik_padded}_{recent_filings}"
+        )
+        cached = self._read_cache(cache_file)
+        if cached is not None:
+            return cached
+
+        data = await asyncio.to_thread(
+            self._fetch_insider_transactions, ticker, cik, recent_filings
+        )
+        self._write_cache(cache_file, data)
+        return data
+
+    def _fetch_insider_transactions(
+        self, ticker: str, cik: str, recent_filings: int
+    ) -> dict:
+        """Sync worker for get_insider_transactions (runs in a thread)."""
+        from edgar.ownership import TransactionCode
+
+        company = EdgarClient._resolve_company(ticker, cik)
+        transactions: list[dict] = []
+        scanned = 0
+
+        if company is not None:
+            try:
+                filings = company.get_filings(form="4").latest(recent_filings)
+            except Exception as exc:
+                warnings.warn(
+                    f"edgartools Company.get_filings(form='4') failed for "
+                    f"{ticker!r} ({type(exc).__name__}: {exc}).",
+                    stacklevel=2,
+                )
+                filings = None
+
+            if filings is not None:
+                # .latest(n) may return a single Filing or a Filings container.
+                filing_iter = filings if hasattr(filings, "__iter__") else [filings]
+                for filing in filing_iter:
+                    scanned += 1
+                    try:
+                        form4 = filing.obj()
+                    except Exception as exc:
+                        warnings.warn(
+                            f"edgartools failed to parse Form 4 "
+                            f"{getattr(filing, 'accession_no', '?')!r} "
+                            f"({type(exc).__name__}: {exc}); skipping.",
+                            stacklevel=2,
+                        )
+                        continue
+                    if form4 is None:
+                        continue
+                    transactions.extend(
+                        self._flatten_form4(form4, filing, TransactionCode)
+                    )
+
+        # Aggregate across every non-derivative transaction line.
+        shares_bought = sum(
+            t["shares"] for t in transactions
+            if t["acquired_disposed"] == "A" and t["shares"] is not None
+        )
+        shares_sold = sum(
+            t["shares"] for t in transactions
+            if t["acquired_disposed"] == "D" and t["shares"] is not None
+        )
+        dates = sorted(t["transaction_date"] for t in transactions if t["transaction_date"])
+        insiders = {t["insider"] for t in transactions if t["insider"]}
+
+        return {
+            "ticker": ticker.upper(),
+            "filings_scanned": scanned,
+            "transactions": transactions,
+            "aggregate": {
+                "net_shares": shares_bought - shares_sold,
+                "shares_bought": shares_bought,
+                "shares_sold": shares_sold,
+                "distinct_insiders": len(insiders),
+                "transaction_count": len(transactions),
+                "window_start": dates[0] if dates else None,
+                "window_end": dates[-1] if dates else None,
+            },
+        }
+
+    @staticmethod
+    def _flatten_form4(form4, filing, transaction_code_cls) -> list[dict]:
+        """Flatten one edgartools Form4 object into per-transaction dicts."""
+        owners = form4.reporting_owners.owners if form4.reporting_owners else []
+        # Insider name + relationship come from the (first) reporting owner.
+        if owners:
+            owner = owners[0]
+            insider = owner.name
+            roles = []
+            if owner.is_director:
+                roles.append("Director")
+            if owner.is_officer:
+                roles.append("Officer")
+            if owner.is_ten_pct_owner:
+                roles.append("10% Owner")
+            if owner.is_other:
+                roles.append("Other")
+            relationship = " / ".join(roles) if roles else "Unknown"
+            if owner.officer_title:
+                relationship = f"{relationship} ({owner.officer_title})"
+        else:
+            insider = form4.insider_name
+            relationship = "Unknown"
+
+        accession = getattr(filing, "accession_no", "")
+        ndt = form4.non_derivative_table
+        records: list[dict] = []
+        if ndt is None or not ndt.has_transactions:
+            return records
+
+        for row in ndt.transactions.data.itertuples():
+            code = getattr(row, "Code", "") or ""
+            shares = _coerce_number(getattr(row, "Shares", None))
+            records.append({
+                "insider": insider,
+                "relationship": relationship,
+                "transaction_date": str(getattr(row, "Date", "") or ""),
+                "code": code,
+                "code_description": transaction_code_cls.DESCRIPTIONS.get(code, code),
+                "acquired_disposed": getattr(row, "AcquiredDisposed", "") or "",
+                "shares": shares,
+                "price": _coerce_number(getattr(row, "Price", None)),
+                "resulting_holding": _coerce_number(getattr(row, "Remaining", None)),
+                "security": str(getattr(row, "Security", "") or ""),
+                "accession_number": accession,
+            })
+        return records
+
+    # ------------------------------------------------------------------
+    # 2.9 — Institutional holdings (13F-HR)
+    # ------------------------------------------------------------------
+
+    async def get_institutional_holdings(self, cik: str) -> dict:
+        """Return the latest 13F-HR holdings for an institutional filer.
+
+        Interpretation implemented: **"latest 13F-HR holdings for a filer."**
+        Given the CIK of an institutional investment manager (e.g. Berkshire
+        Hathaway, CIK 1067983), this fetches that manager's most-recent
+        13F-HR filing, returns its full holdings table, and — when the prior
+        quarter's 13F is available — a quarter-over-quarter delta per security.
+
+        (The alternative interpretation, "which institutions hold company X",
+        is not exposed by edgartools as a clean first-class API — it requires
+        a full-text 13F scan — so the filer-centric view is implemented.)
+
+        Args:
+            cik: CIK of the 13F filer (zero-padded or bare).
+
+        Returns a JSON-serializable dict::
+
+            {
+              "filer_cik": "0001067983",
+              "manager_name": "Berkshire Hathaway Inc",
+              "report_period": "2024-12-31",
+              "filing_date": "2025-02-14",
+              "total_value": 267000000000,    # USD
+              "total_holdings": 38,
+              "holdings": [
+                {"issuer": "APPLE INC", "ticker": "AAPL",
+                 "cusip": "037833100", "shares": 300000000,
+                 "value": 75000000000},
+                ...
+              ],
+              "qoq_delta": {                  # null if prior 13F unavailable
+                "previous_period": "2024-09-30",
+                "changes": [
+                  {"issuer": "APPLE INC", "ticker": "AAPL",
+                   "cusip": "037833100", "status": "DECREASED",
+                   "shares": 300000000, "prev_shares": 400000000,
+                   "share_change": -100000000, "value_change": -25000000000},
+                  ...
+                ]
+              }
+            }
+
+        Result is cached on disk for 24h.
+        """
+        cik_padded = cik.zfill(10)
+        cache_file = self._cache_path(f"institutional_{cik_padded}")
+        cached = self._read_cache(cache_file)
+        if cached is not None:
+            return cached
+
+        data = await asyncio.to_thread(self._fetch_institutional_holdings, cik)
+        self._write_cache(cache_file, data)
+        return data
+
+    def _fetch_institutional_holdings(self, cik: str) -> dict:
+        """Sync worker for get_institutional_holdings (runs in a thread)."""
+        cik_int = int(cik.lstrip("0") or "0")
+        result: dict[str, Any] = {
+            "filer_cik": cik.zfill(10),
+            "manager_name": None,
+            "report_period": None,
+            "filing_date": None,
+            "total_value": None,
+            "total_holdings": None,
+            "holdings": [],
+            "qoq_delta": None,
+        }
+
+        try:
+            company = Company(cik_int)
+            filing = company.get_filings(form="13F-HR").latest()
+        except Exception as exc:
+            warnings.warn(
+                f"edgartools could not load 13F-HR filings for CIK {cik!r} "
+                f"({type(exc).__name__}: {exc}).",
+                stacklevel=2,
+            )
+            return result
+        if filing is None:
+            return result
+
+        thirteenf = filing.obj()
+        if thirteenf is None:
+            warnings.warn(
+                f"edgartools could not parse the latest 13F-HR for CIK "
+                f"{cik!r}; returning empty holdings.",
+                stacklevel=2,
+            )
+            return result
+
+        result["manager_name"] = thirteenf.management_company_name
+        result["report_period"] = thirteenf.report_period
+        result["filing_date"] = thirteenf.filing_date
+        total_value = thirteenf.total_value
+        result["total_value"] = _coerce_number(total_value)
+        result["total_holdings"] = thirteenf.total_holdings
+        result["holdings"] = _holdings_records(thirteenf.holdings)
+
+        # Quarter-over-quarter delta vs the prior 13F, when available.
+        try:
+            comparison = thirteenf.compare_holdings()
+        except Exception as exc:
+            warnings.warn(
+                f"edgartools 13F compare_holdings failed for CIK {cik!r} "
+                f"({type(exc).__name__}: {exc}); omitting qoq_delta.",
+                stacklevel=2,
+            )
+            comparison = None
+
+        if comparison is not None:
+            changes: list[dict] = []
+            for row in comparison.data.itertuples():
+                changes.append({
+                    "issuer": str(getattr(row, "Issuer", "") or ""),
+                    "ticker": str(getattr(row, "Ticker", "") or ""),
+                    "cusip": str(getattr(row, "Cusip", "") or ""),
+                    "status": str(getattr(row, "Status", "") or ""),
+                    "shares": _coerce_number(getattr(row, "Shares", None)),
+                    "prev_shares": _coerce_number(getattr(row, "PrevShares", None)),
+                    "share_change": _coerce_number(getattr(row, "ShareChange", None)),
+                    "value_change": _coerce_number(getattr(row, "ValueChange", None)),
+                })
+            result["qoq_delta"] = {
+                "previous_period": comparison.previous_period,
+                "changes": changes,
+            }
+        return result
+
+    # ------------------------------------------------------------------
+    # 2.10 — Activist / large-ownership stakes (Schedule 13D / 13G)
+    # ------------------------------------------------------------------
+
+    async def get_activist_stakes(
+        self,
+        cik: str,
+        limit: int = 20,
+    ) -> dict:
+        """Return Schedule 13D / 13G large-ownership stakes for a company.
+
+        A Schedule 13D or 13G is filed when an investor crosses 5% beneficial
+        ownership of a company's stock. **13D signals an active/activist
+        stake** (control intent); **13G signals a passive stake** (typically
+        index funds and long-only institutions). This method pulls the most
+        recent 13D/13G filings *against the company* and flattens each into a
+        per-filer record, tagging the active-vs-passive distinction.
+
+        Note: the SEC mandated structured-XML 13D/13G filings only from late
+        2024 — older filings cannot be machine-parsed by edgartools and are
+        skipped (with a warning), so this method is most useful for recent
+        ownership activity.
+
+        Args:
+            cik:   CIK of the *subject company* (zero-padded or bare).
+            limit: max number of recent 13D/13G filings to read (default 20).
+
+        Returns a JSON-serializable dict::
+
+            {
+              "company_cik": "0000320193",
+              "filings_scanned": 20,
+              "stakes": [
+                {
+                  "filer": "BERKSHIRE HATHAWAY INC",
+                  "filing_date": "2025-02-14",
+                  "form_type": "SCHEDULE 13G",
+                  "stake_type": "passive",      # "active" (13D) / "passive" (13G)
+                  "is_amendment": false,
+                  "percent_of_class": 5.4,      # max across joint filers
+                  "shares": 915000000,          # aggregate beneficial shares
+                  "accession_number": "0001067983-25-000001"
+                },
+                ...
+              ]
+            }
+
+        Result is cached on disk for 24h.
+        """
+        cik_padded = cik.zfill(10)
+        cache_file = self._cache_path(f"activist_{cik_padded}_{limit}")
+        cached = self._read_cache(cache_file)
+        if cached is not None:
+            return cached
+
+        data = await asyncio.to_thread(
+            self._fetch_activist_stakes, cik, limit
+        )
+        self._write_cache(cache_file, data)
+        return data
+
+    def _fetch_activist_stakes(self, cik: str, limit: int) -> dict:
+        """Sync worker for get_activist_stakes (runs in a thread)."""
+        cik_int = int(cik.lstrip("0") or "0")
+        result: dict[str, Any] = {
+            "company_cik": cik.zfill(10),
+            "filings_scanned": 0,
+            "stakes": [],
+        }
+
+        # SEC form labels for the four Schedule 13D/13G variants. edgartools
+        # uses the long "SCHEDULE 13x" spelling (the structured-XML era form).
+        forms = ["SCHEDULE 13D", "SCHEDULE 13D/A",
+                 "SCHEDULE 13G", "SCHEDULE 13G/A"]
+        try:
+            company = Company(cik_int)
+            filings = company.get_filings(form=forms).latest(limit)
+        except Exception as exc:
+            warnings.warn(
+                f"edgartools could not load 13D/13G filings for CIK {cik!r} "
+                f"({type(exc).__name__}: {exc}).",
+                stacklevel=2,
+            )
+            return result
+        if filings is None:
+            return result
+
+        filing_iter = filings if hasattr(filings, "__iter__") else [filings]
+        stakes: list[dict] = []
+        for filing in filing_iter:
+            result["filings_scanned"] += 1
+            try:
+                schedule = filing.obj()
+            except Exception as exc:
+                warnings.warn(
+                    f"edgartools failed to parse 13D/13G "
+                    f"{getattr(filing, 'accession_no', '?')!r} "
+                    f"({type(exc).__name__}: {exc}); skipping.",
+                    stacklevel=2,
+                )
+                continue
+            if schedule is None:
+                # Pre-XML filing edgartools cannot machine-parse — skip quietly.
+                continue
+
+            form_type = str(getattr(filing, "form", "") or "")
+            is_13d = "13D" in form_type.upper()
+            persons = getattr(schedule, "reporting_persons", None) or []
+            filer = persons[0].name if persons else None
+            stakes.append({
+                "filer": filer,
+                "filing_date": str(schedule.filing_date),
+                "form_type": form_type,
+                "stake_type": "active" if is_13d else "passive",
+                "is_amendment": bool(getattr(schedule, "is_amendment", False)),
+                "percent_of_class": _coerce_number(schedule.total_percent),
+                "shares": _coerce_number(schedule.total_shares),
+                "accession_number": getattr(filing, "accession_no", ""),
+            })
+
+        result["stakes"] = stakes
+        return result
+
+    # ------------------------------------------------------------------
+    # 2.11 — Segment-level XBRL facts
+    # ------------------------------------------------------------------
+
+    async def get_segment_facts(self, ticker: str, cik: str) -> dict:
+        """Return segment-level XBRL facts from the latest 10-K.
+
+        Uses edgartools' dimensional-XBRL support: parses the latest 10-K's
+        XBRL, then queries facts tagged against the reportable-segments axis
+        (``us-gaap:StatementBusinessSegmentsAxis``). Each fact carries the
+        segment name (the dimension member) so revenue / operating income /
+        etc. can be read per reportable segment, per period.
+
+        This feeds a downstream quantitative segment-reorg check (does the set
+        of reportable segments change between filings?).
+
+        Args:
+            ticker: company ticker (preferred edgartools identifier).
+            cik:    zero-padded or bare CIK (fallback identifier).
+
+        Returns a JSON-serializable dict::
+
+            {
+              "ticker": "AAPL",
+              "segment_axis": "us-gaap:StatementBusinessSegmentsAxis",
+              "segments": ["Americas", "Europe", "Greater China", ...],
+              "facts": [
+                {
+                  "segment": "Americas",
+                  "concept": "us-gaap:RevenueFromContractWithCustomer...",
+                  "label": "Americas",
+                  "value": 167045000000.0,
+                  "period_start": "2023-10-01",
+                  "period_end": "2024-09-28"
+                },
+                ...
+              ]
+            }
+
+        Result is cached on disk for 24h.
+        """
+        cik_padded = cik.zfill(10)
+        cache_file = self._cache_path(f"segments_{cik_padded}")
+        cached = self._read_cache(cache_file)
+        if cached is not None:
+            return cached
+
+        data = await asyncio.to_thread(self._fetch_segment_facts, ticker, cik)
+        self._write_cache(cache_file, data)
+        return data
+
+    _SEGMENT_AXIS = "us-gaap:StatementBusinessSegmentsAxis"
+
+    def _fetch_segment_facts(self, ticker: str, cik: str) -> dict:
+        """Sync worker for get_segment_facts (runs in a thread)."""
+        result: dict[str, Any] = {
+            "ticker": ticker.upper(),
+            "segment_axis": self._SEGMENT_AXIS,
+            "segments": [],
+            "facts": [],
+        }
+
+        tenk_filing = self._latest_10k_filing(ticker, cik)
+        if tenk_filing is None:
+            return result
+
+        from edgar.xbrl import XBRL
+
+        try:
+            xbrl = XBRL.from_filing(tenk_filing)
+        except Exception as exc:
+            warnings.warn(
+                f"edgartools XBRL.from_filing failed for {ticker!r} "
+                f"({type(exc).__name__}: {exc}); no segment facts.",
+                stacklevel=2,
+            )
+            return result
+        if xbrl is None:
+            return result
+
+        try:
+            df = (
+                xbrl.query()
+                .by_dimension("StatementBusinessSegmentsAxis")
+                .to_dataframe()
+            )
+        except Exception as exc:
+            warnings.warn(
+                f"edgartools dimensional XBRL query failed for {ticker!r} "
+                f"({type(exc).__name__}: {exc}); no segment facts.",
+                stacklevel=2,
+            )
+            return result
+
+        if df is None or len(df) == 0:
+            return result
+
+        # The segment name is the dimension member; edgartools resolves a
+        # human-readable label into 'dimension_member_label' (preferred), with
+        # 'member' as the raw fallback.
+        seg_col = (
+            "dimension_member_label"
+            if "dimension_member_label" in df.columns
+            else "member"
+        )
+        facts: list[dict] = []
+        for row in df.itertuples():
+            segment = getattr(row, seg_col, None) if seg_col else None
+            facts.append({
+                "segment": str(segment) if segment else "",
+                "concept": str(getattr(row, "concept", "") or ""),
+                "label": str(getattr(row, "label", "") or ""),
+                "value": _coerce_number(getattr(row, "value", None)),
+                "period_start": str(getattr(row, "period_start", "") or ""),
+                "period_end": str(getattr(row, "period_end", "") or ""),
+            })
+
+        result["facts"] = facts
+        # Distinct segments, preserving first-seen order.
+        seen: list[str] = []
+        for f in facts:
+            if f["segment"] and f["segment"] not in seen:
+                seen.append(f["segment"])
+        result["segments"] = seen
+        return result
+
+    @staticmethod
+    def _latest_10k_filing(ticker: str, cik: str):
+        """Resolve the latest 10-K as an edgartools Filing object, or None."""
+        company = EdgarClient._resolve_company(ticker, cik)
+        if company is None:
+            return None
+        try:
+            return company.get_filings(form="10-K").latest()
+        except Exception as exc:
+            warnings.warn(
+                f"edgartools Company.get_filings(form='10-K') failed for "
+                f"{ticker!r} ({type(exc).__name__}: {exc}).",
+                stacklevel=2,
+            )
+            return None
+
+    # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
 
@@ -534,6 +1128,54 @@ class EdgarClient:
 # ----------------------------------------------------------------------
 # Module-level helpers
 # ----------------------------------------------------------------------
+
+def _coerce_number(value: Any) -> Any:
+    """Coerce an edgartools/pandas/Decimal scalar to a JSON-safe number.
+
+    edgartools returns a mix of numpy scalars, ``Decimal``, plain ints/floats
+    and occasionally strings or NaN. This normalizes anything numeric to a
+    plain ``int``/``float`` and maps missing/NaN/None to ``None`` so the
+    result survives ``json.dumps`` and reads cleanly for skill subagents.
+    """
+    if value is None:
+        return None
+    # pandas / numpy NaN — NaN != NaN is the portable check.
+    try:
+        if value != value:  # noqa: PLR0124 — NaN sentinel check
+            return None
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return value
+    # Decimal, numpy scalars, numeric strings.
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    if f != f:  # NaN after coercion
+        return None
+    return int(f) if f.is_integer() else f
+
+
+def _holdings_records(holdings) -> list[dict]:
+    """Flatten an edgartools 13F holdings DataFrame into JSON-safe records."""
+    if holdings is None or len(holdings) == 0:
+        return []
+    records: list[dict] = []
+    for row in holdings.itertuples():
+        records.append({
+            "issuer": str(getattr(row, "Issuer", "") or ""),
+            "ticker": str(getattr(row, "Ticker", "") or ""),
+            "cusip": str(getattr(row, "Cusip", "") or ""),
+            "shares": _coerce_number(getattr(row, "SharesPrnAmount", None)),
+            "value": _coerce_number(getattr(row, "Value", None)),
+        })
+    return records
+
 
 def _ensure_identity(user_agent: str) -> None:
     """Wire edgartools' one-time SEC identity from the client's user_agent.
