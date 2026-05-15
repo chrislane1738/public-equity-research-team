@@ -25,8 +25,18 @@ Run an earnings-update on `$1`. Unlike `/deep-dive`, this skips comps + the 5-po
 
 5. **Dispatch `dcf` and `risk-upside` in parallel** (two Agent calls in one message). DCF uses the default 12× EV/EBITDA fallback since comps is absent in this workflow. Risk-upside references any red flags the accountant surfaced.
 
-6. **Dispatch `memo-builder`** with `variant=earnings` so it wraps `equity-research:earnings-analysis`. The memo carries an "Accounting & Filings Audit" mini-section even in earnings mode.
+6. **PAUSE CHECKPOINT — which deliverables?** Synthesis (a brief one via md-synthesis) is implicit in the earnings flow via the memo prompt, but the explicit deliverables are: memo, html. Ask:
 
-7. **Invoke `synthesize-html` skill in-context** to assemble `<TICKER>/report.html`.
+   > *"Earnings update synthesized. Which deliverables would you like?*
+   > *— memo (.docx, ~30K tokens — wraps `equity-research:earnings-analysis`)*
+   > *— html (report.html, cheap)*
+   >
+   > *Reply with any combination, e.g. 'both', 'just html', 'just memo'."*
 
-Output: `~/Documents/equity-research/$1/{reports/memo.docx, report.html}`.
+   Wait for explicit confirmation.
+
+7. **If memo selected:** dispatch `memo-builder` with `variant=earnings` so it wraps `equity-research:earnings-analysis`. The memo carries an "Accounting & Filings Audit" mini-section even in earnings mode.
+
+8. **If html selected:** invoke `synthesize-html` skill in-context to assemble `<TICKER>/report.html`.
+
+Output: only the artifacts produced per the deliverable selection. `~/Documents/equity-research/$1/{reports/memo.docx, report.html}` depending on Checkpoint.

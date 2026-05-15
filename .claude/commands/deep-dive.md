@@ -31,11 +31,26 @@ Run a deep-dive on `$1`. This pipeline has **two mandatory pause points** where 
 
 8. **Invoke `md-synthesis` skill in-context (not a subagent).** Read all section.md files (canonical order: accountant, fundamentals, industry, dcf, comps, macro, risk, technicals) plus `_synthesis.md` inputs. Write `synthesis/_synthesis.md`. The synthesis surfaces any High-severity red flags in the executive summary.
 
-9. **Dispatch `deck-builder` and `memo-builder`** as two parallel subagents. Both consume the synthesis + accountant outputs and produce the dedicated "Accounting Audit Summary" section/slide.
+9. **PAUSE CHECKPOINT C — which deliverables?** Synthesis is complete. Before dispatching the production agents, ask the user which deliverables to produce:
 
-10. **Invoke `synthesize-html` skill in-context.** Assemble `<TICKER>/report.html`.
+   > *"Synthesis complete (rating: <X>, PT: <Y>). Which deliverables would you like?*
+   > *— memo (.docx, ~50K tokens)*
+   > *— deck (.pptx, ~70K tokens)*
+   > *— html (report.html, in-context — cheap)*
+   >
+   > *Reply with any combination, e.g. 'all', 'just html', 'memo and html', 'deck only', 'none' (synthesis already on disk)."*
 
-11. Report the final path to the user.
+   Parse the user's response into a set of {memo, deck, html}. Default if response is ambiguous: ask for clarification, do not guess. Wait for explicit confirmation.
+
+10. **Dispatch the selected production agents.** Based on Checkpoint C:
+    - If memo + deck both selected: dispatch `memo-builder` and `deck-builder` as two parallel subagents (one Agent message).
+    - If only memo: single `memo-builder` dispatch.
+    - If only deck: single `deck-builder` dispatch.
+    - If neither memo nor deck: skip this step entirely.
+
+11. **If html was selected:** invoke `synthesize-html` skill in-context. Assemble `<TICKER>/report.html`. The HTML auto-includes whichever companion files (memo.docx, pitch.pptx) actually exist — missing companions are silently skipped.
+
+12. Report the final paths to the user (only the artifacts you actually produced; do not list synthesis if it was already on disk pre-checkpoint).
 
 ## Failure handling
 
