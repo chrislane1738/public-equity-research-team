@@ -75,6 +75,14 @@ _SECTION_ITEM_NUMBERS: dict[str, str] = {
     "financial_statements": "8",
 }
 
+# _SECTION_MARKERS and _SECTION_ITEM_NUMBERS are parallel dicts keyed by
+# section_id; a key mismatch would silently break the edgartools/regex
+# dispatch, so fail fast at import time if they ever drift apart.
+assert _SECTION_MARKERS.keys() == _SECTION_ITEM_NUMBERS.keys(), (
+    "_SECTION_MARKERS and _SECTION_ITEM_NUMBERS must have identical keys; "
+    f"mismatch: {_SECTION_MARKERS.keys() ^ _SECTION_ITEM_NUMBERS.keys()}"
+)
+
 _MAX_SECTION_CHARS = 50_000
 
 
@@ -470,33 +478,53 @@ class EdgarClient:
                 try:
                     val = getattr(tenk, attr, None)
                     text = str(val).strip() if val else ""
-                except Exception:
+                except Exception as exc:
+                    warnings.warn(
+                        f"edgartools TenK.{attr} failed "
+                        f"({type(exc).__name__}: {exc}); skipping section "
+                        f"{section_id!r}.",
+                        stacklevel=2,
+                    )
                     text = ""
             if text:
                 chunks.append(text[:_MAX_SECTION_CHARS])
         return chunks
 
     @staticmethod
+    def _resolve_company(ticker: str, cik: str):
+        """Resolve an edgartools Company, trying ticker then CIK; None on failure."""
+        for identifier in (ticker, int(cik.lstrip("0") or "0")):
+            try:
+                return Company(identifier)
+            except Exception:
+                continue
+        return None
+
+    @staticmethod
     def _latest_tenk(ticker: str, cik: str):
         """Resolve the latest 10-K as an edgartools TenK object, or None."""
-        try:
-            company = Company(ticker)
-        except Exception:
-            try:
-                company = Company(int(cik.lstrip("0") or "0"))
-            except Exception:
-                return None
+        company = EdgarClient._resolve_company(ticker, cik)
+        if company is None:
+            return None
         try:
             return company.latest_tenk
-        except Exception:
+        except Exception as exc:
+            warnings.warn(
+                f"edgartools Company.latest_tenk failed "
+                f"({type(exc).__name__}: {exc}); falling back to raw-HTML "
+                f"extraction.",
+                stacklevel=2,
+            )
             return None
 
     def _fetch_latest_10k_html(self, ticker: str, cik: str) -> str:
         """Fetch the raw HTML of the latest 10-K via edgartools (sync)."""
-        try:
-            company = Company(ticker)
-        except Exception:
-            company = Company(int(cik.lstrip("0") or "0"))
+        company = EdgarClient._resolve_company(ticker, cik)
+        if company is None:
+            raise RuntimeError(
+                f"Could not resolve edgartools Company for ticker={ticker!r} "
+                f"cik={cik!r}"
+            )
         filing = company.get_filings(form="10-K").latest()
         if filing is None:
             raise RuntimeError("No 10-K found in recent filings")
@@ -527,7 +555,9 @@ def _extract_section_via_edgartools(filing_html: str, section_id: str) -> str:
 
     Returns the section's plain text, or "" if edgartools cannot parse the
     document or locate the requested section. Never raises — any failure is
-    swallowed so the caller can fall back to the regex extractor.
+    caught so the caller can fall back to the regex extractor, but a real
+    edgartools breakage is surfaced via ``warnings.warn`` (with the exception
+    type) so a permanent degradation to the regex path is never fully silent.
     """
     item_number = _SECTION_ITEM_NUMBERS.get(section_id)
     if item_number is None:
@@ -548,5 +578,10 @@ def _extract_section_via_edgartools(filing_html: str, section_id: str) -> str:
             return ""
         text = doc.get_sec_section(matches[0])
         return str(text).strip() if text else ""
-    except Exception:
+    except Exception as exc:
+        warnings.warn(
+            f"edgartools section parser failed "
+            f"({type(exc).__name__}: {exc}); falling back to regex extractor.",
+            stacklevel=2,
+        )
         return ""

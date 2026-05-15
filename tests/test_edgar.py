@@ -166,9 +166,14 @@ async def test_fetch_10k_excerpt_falls_back_to_raw_html(client, respx_mock, monk
 
     monkeypatch.setattr("tools.edgar.Company", _NoTenKCompany)
 
-    with pytest.warns(UserWarning, match="falling back to raw-HTML"):
+    # This path emits two kinds of UserWarning: the "raw-HTML" fallback from
+    # fetch_10k_excerpt, plus per-section "regex extractor" fallbacks from the
+    # synthetic-fixture extract_filing_section calls. Capture all of them so
+    # none leak, then assert the raw-HTML one is present.
+    with pytest.warns(UserWarning) as record:
         excerpt = await client.fetch_10k_excerpt("NVDA", cik="0001045810")
 
+    assert any("falling back to raw-HTML" in str(w.message) for w in record)
     assert "Business" in excerpt
     assert "two reportable segments" in excerpt
     assert "Risk Factors" in excerpt
@@ -422,9 +427,22 @@ _MIXED_CASE_10K_HTML = """
 """
 
 
+# NOTE: the synthetic-HTML fixtures below are not parseable by edgartools'
+# structured HTMLParser (it returns no SEC sections for them), so every
+# extract_filing_section call here legitimately exercises the *regex fallback*
+# path and emits the fallback UserWarning. Each call is wrapped in
+# pytest.warns(UserWarning) so that warning is asserted-and-consumed rather
+# than leaked. The dedicated edgartools-branch coverage lives in
+# test_extract_filing_section_uses_edgartools_branch / _warns_on_parser_failure.
+
+
 def test_extract_filing_section_mda_uppercase_markers():
-    """Core regression: uppercase ITEM 7. must be matched and cut before ITEM 7A."""
-    result = EdgarClient.extract_filing_section(_UPPERCASE_10K_HTML, "mda")
+    """Core regression: uppercase ITEM 7. must be matched and cut before ITEM 7A.
+
+    Exercises the regex fallback path (synthetic HTML, edgartools yields none).
+    """
+    with pytest.warns(UserWarning, match="falling back to regex"):
+        result = EdgarClient.extract_filing_section(_UPPERCASE_10K_HTML, "mda")
     assert "Revenue increased 30%" in result
     assert "Operating income improved" in result
     # ITEM 7A text must NOT bleed in
@@ -432,51 +450,157 @@ def test_extract_filing_section_mda_uppercase_markers():
 
 
 def test_extract_filing_section_mda_mixed_case():
-    result = EdgarClient.extract_filing_section(_MIXED_CASE_10K_HTML, "mda")
+    """Regex fallback path (synthetic HTML)."""
+    with pytest.warns(UserWarning, match="falling back to regex"):
+        result = EdgarClient.extract_filing_section(_MIXED_CASE_10K_HTML, "mda")
     assert "Gross profit grew 15%" in result
     assert "Foreign exchange exposure" not in result
 
 
 def test_extract_filing_section_risk_factors():
-    result = EdgarClient.extract_filing_section(_UPPERCASE_10K_HTML, "risk_factors")
+    """Regex fallback path (synthetic HTML)."""
+    with pytest.warns(UserWarning, match="falling back to regex"):
+        result = EdgarClient.extract_filing_section(_UPPERCASE_10K_HTML, "risk_factors")
     assert "Market volatility risk" in result
     # should not bleed into properties
     assert "We lease office space" not in result
 
 
 def test_extract_filing_section_business():
-    result = EdgarClient.extract_filing_section(_UPPERCASE_10K_HTML, "business")
+    """Regex fallback path (synthetic HTML)."""
+    with pytest.warns(UserWarning, match="falling back to regex"):
+        result = EdgarClient.extract_filing_section(_UPPERCASE_10K_HTML, "business")
     assert "We make widgets" in result
     assert "Market volatility risk" not in result
 
 
 def test_extract_filing_section_financial_statements():
-    result = EdgarClient.extract_filing_section(_UPPERCASE_10K_HTML, "financial_statements")
+    """Regex fallback path (synthetic HTML)."""
+    with pytest.warns(UserWarning, match="falling back to regex"):
+        result = EdgarClient.extract_filing_section(_UPPERCASE_10K_HTML, "financial_statements")
     assert "consolidated financial statements" in result
     # ITEM 7A text is before Item 8 and should not be present
     assert "Interest rate sensitivity" not in result
 
 
 def test_extract_filing_section_returns_empty_for_missing_section():
+    """Regex fallback path (synthetic HTML)."""
     html = "<html><body><p>No SEC items here.</p></body></html>"
-    result = EdgarClient.extract_filing_section(html, "mda")
+    with pytest.warns(UserWarning, match="falling back to regex"):
+        result = EdgarClient.extract_filing_section(html, "mda")
     assert result == ""
 
 
 def test_extract_filing_section_caps_at_max_length():
+    """Regex fallback path (synthetic HTML)."""
     # Build an artificially large section
     large_content = "<p>" + ("x" * 100) + "</p>\n" * 1000  # ~101 000 chars
     html = (
         f"<html><body><h2>Item 7. MD&A</h2>{large_content}"
         "<h2>Item 7A. Market Risk</h2><p>stop here</p></body></html>"
     )
-    result = EdgarClient.extract_filing_section(html, "mda")
+    with pytest.warns(UserWarning, match="falling back to regex"):
+        result = EdgarClient.extract_filing_section(html, "mda")
     assert len(result) <= 50_000
 
 
 def test_extract_filing_section_raises_for_unknown_section():
     with pytest.raises(ValueError, match="Unknown section_id"):
         EdgarClient.extract_filing_section("<html/>", "unknown_section")
+
+
+# ------------------------------------------------------------------
+# 2.5b — extract_filing_section: hermetic coverage of the *edgartools*
+#        structured-parser branch (no network).
+#
+# On the synthetic test HTML, the real edgartools HTMLParser returns no SEC
+# sections, so every offline test above falls through to the regex fallback.
+# To exercise the edgartools branch deterministically we monkeypatch the
+# `edgar.documents.HTMLParser` symbol that `_extract_section_via_edgartools`
+# imports lazily, swapping in a fake parsed document.
+# ------------------------------------------------------------------
+
+
+class _FakeParsedDoc:
+    """Stand-in for an edgartools parsed HTML document.
+
+    Exposes the two methods `_extract_section_via_edgartools` calls:
+    get_available_sec_sections() and get_sec_section(key).
+    """
+
+    def __init__(self, sections):
+        # sections: {sec_section_key: text}
+        self._sections = sections
+
+    def get_available_sec_sections(self):
+        return list(self._sections.keys())
+
+    def get_sec_section(self, key):
+        return self._sections.get(key, "")
+
+
+def _make_fake_htmlparser(sections=None, raises=None):
+    """Build a fake HTMLParser class for monkeypatching edgar.documents.HTMLParser.
+
+    If `raises` is given, .parse() raises that exception; otherwise .parse()
+    returns a _FakeParsedDoc carrying `sections`.
+    """
+
+    class _FakeHTMLParser:
+        def parse(self, filing_html):
+            if raises is not None:
+                raise raises
+            return _FakeParsedDoc(sections or {})
+
+    return _FakeHTMLParser
+
+
+def test_extract_filing_section_uses_edgartools_branch(monkeypatch):
+    """When edgartools' parser yields the section, extract_filing_section
+    returns the edgartools-parsed text and emits NO fallback warning."""
+    fake_cls = _make_fake_htmlparser(
+        sections={
+            "part_ii_item_7": "MD&A via edgartools structured parser. "
+                              "Revenue grew 42% on AI demand.",
+        }
+    )
+    monkeypatch.setattr("edgar.documents.HTMLParser", fake_cls)
+
+    import warnings as _w
+
+    with _w.catch_warnings(record=True) as caught:
+        _w.simplefilter("always")
+        result = EdgarClient.extract_filing_section(
+            "<html><body>irrelevant — parser is faked</body></html>", "mda"
+        )
+
+    assert "edgartools structured parser" in result
+    assert "Revenue grew 42%" in result
+    # the edgartools branch succeeded — no fallback warning of any kind
+    assert not [w for w in caught if "falling back" in str(w.message)]
+
+
+def test_extract_filing_section_warns_on_edgartools_parser_failure(monkeypatch):
+    """When the edgartools entry point RAISES, the fallback fires, the regex
+    result is returned, and the attribution warning (Fix 1) is emitted."""
+    fake_cls = _make_fake_htmlparser(raises=RuntimeError("simulated parser crash"))
+    monkeypatch.setattr("edgar.documents.HTMLParser", fake_cls)
+
+    with pytest.warns(UserWarning) as record:
+        result = EdgarClient.extract_filing_section(_UPPERCASE_10K_HTML, "mda")
+
+    # regex fallback still produces the MD&A section, 7A excluded
+    assert "Revenue increased 30%" in result
+    assert "Interest rate sensitivity" not in result
+
+    messages = [str(w.message) for w in record]
+    # attribution warning names the exception type + message (Fix 1)
+    assert any(
+        "edgartools section parser failed" in m
+        and "RuntimeError" in m
+        and "simulated parser crash" in m
+        for m in messages
+    )
 
 
 # ------------------------------------------------------------------
@@ -607,7 +731,10 @@ def test_normalize_item_markers_converts_section_sign_to_item():
 
 
 def test_extract_filing_section_handles_nbsp_in_item_marker():
-    """Legacy filer with nbsp inside the marker — was a known parser miss."""
+    """Legacy filer with nbsp inside the marker — was a known parser miss.
+
+    Exercises the regex fallback path (synthetic HTML).
+    """
     html = """
     <html><body>
     <h2>Item&nbsp;7. MD&amp;A</h2>
@@ -616,7 +743,8 @@ def test_extract_filing_section_handles_nbsp_in_item_marker():
     <p>Interest rate sensitivity</p>
     </body></html>
     """
-    text = EdgarClient.extract_filing_section(html, "mda")
+    with pytest.warns(UserWarning, match="falling back to regex"):
+        text = EdgarClient.extract_filing_section(html, "mda")
     assert "Revenue increased 30%" in text
     assert "Interest rate sensitivity" not in text
 
@@ -687,10 +815,13 @@ def test_extract_filing_section_pdf_rejects_unknown_section_id(tmp_path):
 
 
 def test_extract_filing_section_auto_dispatches_html(tmp_path):
+    """Dispatches to extract_filing_section; synthetic HTML hits the regex
+    fallback path, so the fallback warning is expected."""
     f = tmp_path / "filing.htm"
     f.write_text("<html><body><h2>Item 7. MD&A</h2><p>Revenue up 10%.</p>"
                  "<h2>Item 7A. Risk</h2><p>FX exposure.</p></body></html>")
-    text = EdgarClient.extract_filing_section_auto(f, "mda")
+    with pytest.warns(UserWarning, match="falling back to regex"):
+        text = EdgarClient.extract_filing_section_auto(f, "mda")
     assert "Revenue up 10%" in text
 
 
