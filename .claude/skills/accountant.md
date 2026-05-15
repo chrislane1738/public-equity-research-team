@@ -30,7 +30,12 @@ specific filing accession numbers and page references whenever possible.
 - `tools.edgar.EdgarClient` — `get_company_submissions(cik)`, `get_company_facts(cik)`,
   `list_filings(cik, form_types, limit)`, `download_filing_document(cik, accession_number,
   primary_document, output_path)`, `extract_filing_section(filing_html, section_id)`,
-  `fetch_10k_excerpt(ticker, cik)` (T27 new methods)
+  `fetch_10k_excerpt(ticker, cik)` (T27 new methods),
+  `get_segment_facts(ticker, cik)` — segment-level XBRL facts (revenue / operating
+  income by reportable segment, per period) for the quantitative segment-reorg
+  sub-pass in RF-06; returns `{"ticker", "segment_axis", "segments": [...],
+  "facts": [{"segment", "concept", "label", "value", "period_start",
+  "period_end"}, ...]}`
 - `MarketData` / `FmpClient` — `_get('<endpoint>', ticker, {'limit': N})` via asyncio
   for FMP comparison values
 - `WebSearch` + `WebFetch` — IR page discovery and earnings presentation download
@@ -63,7 +68,7 @@ accountant's wall-clock and token cost.
 | 6. Download filings | All identified in Step 2 | **Latest 8-K + earnings deck only** |
 | 7. Earnings presentation | Full IR-page search | Full (no change — this is the highest-value artifact in earnings mode) |
 | 8. 10-K section extracts | risk_factors / mda / financial_statements / legal_proceedings | **Skip entirely** (no 10-K download in earnings mode) |
-| 9. Red flag audit | All 16 categories (RF-01 through RF-16) | **Reduced set: RF-01, RF-02, RF-06, RF-14 only** (revenue recognition, OCF/NI divergence, segment reorg, inventory write-downs — the four most likely to be visible in a single earnings release) |
+| 9. Red flag audit | All 16 categories (RF-01 through RF-16), including every sub-pass | **Reduced set: RF-01, RF-02, RF-06, RF-14 only** (revenue recognition, OCF/NI divergence, segment reorg, inventory write-downs — the four most likely to be visible in a single earnings release). Of the RF sub-passes, run only the **conf-call analyst-Q&A sentiment** sub-pass (under RF-01 / RF-02) — a transcript is the key earnings artifact. **Skip** the footnote walk (RF-01 / RF-08), the debt-covenant scan (RF-08), the quantitative segment-reorg XBRL sub-pass (RF-06), and the 5-year capital-allocation pass (RF-08) — these need the 10-K and multi-year history that earnings mode does not pull. |
 | 10. Write outputs | Full | Same artifacts but `section.md` is shorter; `red-flags.md` lists only the 4 RF categories |
 
 In earnings-update mode, ALL three return signals (`CLEAN`, `PAUSE_FOR_REVIEW`, `FMP_ONLY_FALLBACK`) still apply with their narrowed scope. The pause-on-discrepancy contract is unchanged — any divergent line item in the most recent quarter triggers `PAUSE_FOR_REVIEW`.
@@ -366,6 +371,32 @@ value estimates; software/SaaS contract modifications are recognized on a
 catch-up basis without disclosure of aggregate effect; or gross-vs-net revenue
 presentation changed YoY.
 
+**Sub-pass — Footnote walk (revenue-recognition leg) (deep-dive only).** Do not
+skim the policy note in isolation — systematically walk every financial-statement
+footnote in the Item 8 `financial_statements` section and read each for
+revenue-recognition substance. Specifically search for: a change in the
+revenue-recognition policy or in the timing of performance-obligation
+satisfaction; a change in the treatment of variable consideration, returns
+reserves, or rebates; reclassification of a revenue stream between contract types
+(e.g., point-in-time vs. over-time); and any restatement footnote touching prior
+revenue. Escalate severity per the triggers above when a footnote discloses such
+a change. (This sub-pass shares the same footnote read as the RF-08 footnote
+walk — run the walk once and route findings to whichever RF they bear on.)
+
+**Sub-pass — Conf-call analyst-Q&A sentiment (revenue-recognition leg).** Parse
+the Q&A section of the latest earnings call transcript (extracted text saved by
+Step 7, or `WebSearch` for `"<COMPANY NAME> Q[N] [YEAR] earnings call transcript"`
+and `WebFetch` the top result). Flag at **Medium** severity if analysts visibly
+push back on a revenue-quality question — repeated questions on the durability,
+pull-forward, or one-time nature of revenue, on bookings-vs-revenue conversion,
+or on a recognition-policy change — and management's answer is evasive (redirects
+to a different metric, defers to a later date, or does not give the number
+asked for). Two or more distinct analysts pressing the same revenue-recognition
+point, or the same analyst re-asking after a non-answer, is itself the trigger.
+Capture the analyst name, the question, and the (non-)answer as evidence. (Same
+transcript read as the RF-02 sub-pass — parse the Q&A once and route findings to
+both RFs.)
+
 ---
 
 #### RF-02 — OCF / Net Income Divergence (Accruals Quality)
@@ -378,6 +409,17 @@ using XBRL values.
   positive (large non-cash charges dominate).
 
 Include the per-quarter table in the evidence.
+
+**Sub-pass — Conf-call analyst-Q&A sentiment (cash-conversion leg).** Using the
+same earnings-call Q&A read as the RF-01 sub-pass, flag at **Medium** severity if
+analysts repeatedly probe cash conversion, free-cash-flow quality, working-capital
+swings, or the gap between earnings and cash — and management dodges (redirects
+to adjusted/non-GAAP figures, defers the answer, or declines to quantify). Two or
+more distinct analysts pressing the same cash-quality point, or the same analyst
+re-asking after a non-answer, is the trigger. Capture the analyst name, the
+question, and the (non-)answer as evidence. Treat a confirmed dodge on cash
+conversion as corroborating evidence that elevates a Medium accruals finding
+toward High.
 
 ---
 
@@ -423,6 +465,32 @@ filings. Search for "segment" in the extracted text.
 - **Medium:** segment names changed but restated comparatives are provided, or
   a new segment was added without clear prior-period comparison.
 
+**Sub-pass — Quantitative segment-reorg audit (deep-dive only).** The narrative
+check above catches *named* reorganizations; this sub-pass catches *silent* mix
+shifts and segment-count changes in the XBRL data. Call
+`EdgarClient.get_segment_facts(ticker, cik)` — it parses the latest 10-K's
+dimensional XBRL against the reportable-segments axis and returns
+`{"segments": [...], "facts": [{"segment", "concept", "label", "value",
+"period_start", "period_end"}, ...]}`. From `facts`, for each reportable segment
+isolate the revenue concept (a `RevenueFromContractWithCustomer*` concept) and the
+operating-income concept (`OperatingIncomeLoss`), and for the two most recent
+annual periods compute each segment's share of the company total
+(`segment_value / sum(segment_values)`). Then:
+
+- **High:** the set of reportable segments in `segments` differs from the prior
+  10-K's set (a segment appears or disappears) with no restatement of prior-period
+  comparatives — corroborate against the narrative finding above; or any single
+  segment's share of total revenue or operating income moves by **>20 percentage
+  points YoY**.
+- **Medium:** the number of reportable segments changed but restated comparatives
+  are provided; or a segment's revenue/operating-income share moved 10–20 points
+  YoY without a corresponding explanation in the segment footnote or MD&A.
+
+This sub-pass augments — does not replace — the narrative MD&A check. If
+`get_segment_facts` returns an empty `facts` list (single-segment filer, or XBRL
+the parser could not dimensionalize), mark this sub-pass `"data unavailable"` and
+fall back to the narrative finding alone.
+
 ---
 
 #### RF-07 — Goodwill and Intangibles Concentration
@@ -447,6 +515,62 @@ sold", "synthetic lease", "take-or-pay", "throughput agreement".
 - **Medium:** any unconsolidated joint venture where the company has guaranteed
   obligations, or operating lease commitments that materially exceed book
   right-of-use assets.
+
+**Sub-pass — Footnote walk (off-balance-sheet leg) (deep-dive only).** Walk every
+financial-statement footnote in the Item 8 `financial_statements` section (the
+same single read shared with the RF-01 footnote walk) and route off-balance-sheet
+substance here. Beyond the keyword search above, read the leasing footnote for
+the gap between undiscounted future lease commitments and the booked
+right-of-use asset; the commitments-and-contingencies footnote for purchase
+obligations, take-or-pay / throughput agreements, guarantees, and letters of
+credit; the contingent-liabilities footnote for loss contingencies disclosed as
+"reasonably possible" but not accrued, and for the range of reasonably-possible
+loss; and any special-purpose-entity / VIE footnote for exposure not consolidated
+onto the balance sheet. Escalate severity per the triggers above when the
+aggregate of these off-balance-sheet items is material relative to total assets
+or equity.
+
+**Sub-pass — Debt covenant scan (deep-dive only).** Extract debt-agreement
+covenant terms from the 10-K — the long-term-debt footnote in the
+`financial_statements` section, the MD&A liquidity-and-capital-resources
+discussion, and any credit-agreement exhibit. Identify the financial-maintenance
+covenant ratios (typically a maximum leverage ratio — net debt / EBITDA — and a
+minimum interest-coverage ratio), and capture the contractual threshold for each.
+Then compute the company's *as-reported* leverage and coverage from the
+reconciled XBRL data and compare each against its threshold.
+
+- **High:** the company's reported leverage or coverage is within ~0.5x of a
+  covenant threshold (e.g., leverage at 3.6x against a 4.0x maximum, or coverage
+  at 3.3x against a 3.0x minimum) — a thin cushion that a single weak quarter
+  could breach; or the 10-K discloses a covenant waiver, amendment, or breach in
+  the current or prior fiscal year.
+- **Medium:** the covenant cushion is 0.5x–1.0x, or covenant ratios are described
+  narratively but the company does not disclose its current headroom, leaving the
+  cushion unverifiable.
+
+Quote the covenant clause and the computed headroom as evidence. If the company
+has no rated debt or no maintenance covenants (e.g., an investment-grade issuer
+with covenant-lite facilities), mark this sub-pass `"data unavailable"`.
+
+**Sub-pass — 5-year capital-allocation pass (deep-dive only).** Build a five-year
+sources-and-uses view from the annual cash-flow statements (extend the FMP
+`cash-flow-statement` pull to `{'limit': 5}` for this sub-pass): cumulative
+operating cash flow as the source, against the cumulative uses — capex,
+share buybacks, dividends, and cash paid for acquisitions. Also track the change
+in total debt across the same window.
+
+- **High:** buybacks plus dividends were funded with incremental debt (total debt
+  rose materially over the window) during a period in which operating cash flow
+  was flat or declining — i.e., the company borrowed to return capital while its
+  cash engine weakened.
+- **Medium:** cumulative shareholder returns (buybacks + dividends) exceeded
+  cumulative free cash flow (OCF − capex) over the five years, funded by drawing
+  down the cash balance or modest incremental debt, even if operating cash flow
+  was stable.
+
+Present the sources-and-uses table as evidence. This sub-pass is a capital-
+structure-quality check; it does not raise a separate RF number — its findings
+are reported under RF-08.
 
 ---
 
