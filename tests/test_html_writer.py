@@ -221,3 +221,43 @@ def test_build_rail_no_chevron_without_subsections():
     assert 'data-sec="technicals"' in rail
     assert 'class="chev"' not in rail
     assert 'class="subnav"' not in rail
+
+
+def _build_min_tree(tmp_path, ticker, synthesis_text):
+    """Create a minimal ticker tree with all 8 sections."""
+    ticker_dir = tmp_path / ticker
+    for pod in ("fundamentals", "industry", "dcf", "comps", "macro",
+                "risk", "technicals", "synthesis"):
+        (ticker_dir / pod).mkdir(parents=True)
+    for pod in ("fundamentals", "industry", "dcf", "comps", "macro",
+                "risk", "technicals"):
+        (ticker_dir / pod / "section.md").write_text(
+            f"# {pod} title\n\n## A Subsection\n\nContent for {pod}.\n"
+        )
+    (ticker_dir / "synthesis" / "_synthesis.md").write_text(synthesis_text)
+    return ticker_dir
+
+
+def test_write_report_html_renders_masthead_from_synthesis(tmp_path):
+    ticker_dir = _build_min_tree(tmp_path, "MU", REAL_SYNTH)
+    html = write_report_html(ticker_dir, "MU").read_text()
+    assert 'class="masthead"' in html
+    assert 'class="rating sell"' in html
+    assert ">SELL<" in html
+    assert "$400" in html
+    assert '<nav id="rail">' in html
+    assert 'data-sec="fundamentals"' in html
+
+
+def test_write_report_html_rail_has_prefixed_subsection_links(tmp_path):
+    ticker_dir = _build_min_tree(tmp_path, "MU", REAL_SYNTH)
+    html = write_report_html(ticker_dir, "MU").read_text()
+    assert 'href="#fundamentals__a-subsection"' in html
+    assert 'href="#industry__a-subsection"' in html
+
+
+def test_write_report_html_falls_back_to_plain_title(tmp_path):
+    ticker_dir = _build_min_tree(tmp_path, "XYZ", "# Synthesis\n\nNo rating.\n")
+    html = write_report_html(ticker_dir, "XYZ").read_text()
+    assert "XYZ — Equity Research Report" in html
+    assert 'class="callbox"' not in html
