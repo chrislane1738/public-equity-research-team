@@ -99,6 +99,7 @@ body { font-family: Georgia, "Times New Roman", serif; color: var(--fg);
 
 h1.sec { font-size: 23px; color: var(--navy); border-bottom: 2px solid var(--navy);
          padding-bottom: 6px; margin: 52px 0 6px; }
+h1 { font-size: 23px; color: var(--navy); }
 h2 { font-size: 17px; color: var(--navy); margin: 30px 0 8px;
      border-bottom: 1px solid var(--rule); padding-bottom: 3px; }
 h3 { font-size: 15px; color: var(--navy); margin: 22px 0 6px; }
@@ -144,7 +145,7 @@ document.querySelectorAll('.chev').forEach(function(c){
     c.closest('.nav-sec').querySelector('.subnav').classList.toggle('open');
   });
 });
-var io = new IntersectionObserver(function(entries){
+var sectionObserver = new IntersectionObserver(function(entries){
   entries.forEach(function(e){
     if(e.isIntersecting){
       document.querySelectorAll('.nav-sec').forEach(function(n){
@@ -155,7 +156,7 @@ var io = new IntersectionObserver(function(entries){
     }
   });
 }, { rootMargin: '-10% 0px -80% 0px' });
-document.querySelectorAll('section.section').forEach(function(s){ io.observe(s); });
+document.querySelectorAll('section.section').forEach(function(s){ sectionObserver.observe(s); });
 """
 
 

@@ -247,6 +247,7 @@ def test_write_report_html_renders_masthead_from_synthesis(tmp_path):
     assert "$400" in html
     assert '<nav id="rail">' in html
     assert 'data-sec="fundamentals"' in html
+    assert "<script>" in html
 
 
 def test_write_report_html_rail_has_prefixed_subsection_links(tmp_path):
