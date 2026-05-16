@@ -197,7 +197,7 @@ def render_section(section_path: Path) -> str:
     if not section_path.exists():
         return '<p class="placeholder">Section not produced — see logs.</p>'
     md_text = section_path.read_text()
-    return markdown.markdown(md_text, extensions=["tables", "fenced_code"])
+    return markdown.markdown(md_text, extensions=["tables", "fenced_code", "toc"])
 
 
 def _inline_images(html: str, section_dir: Path) -> str:

@@ -32,8 +32,15 @@ def test_render_section_converts_markdown_to_html(tmp_path):
     section_md = tmp_path / "section.md"
     section_md.write_text("# Heading\n\n- bullet one\n- bullet two\n")
     html = render_section(section_md)
-    assert "<h1>" in html
+    assert "<h1" in html
     assert "<li>bullet one</li>" in html
+
+
+def test_render_section_adds_heading_ids(tmp_path):
+    section_md = tmp_path / "section.md"
+    section_md.write_text("## Balance Sheet\n\nbody\n")
+    html = render_section(section_md)
+    assert 'id="balance-sheet"' in html
 
 
 def test_render_section_returns_placeholder_for_missing_file(tmp_path):
