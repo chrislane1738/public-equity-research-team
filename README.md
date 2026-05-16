@@ -6,6 +6,33 @@
 
 Local-first multi-agent equity research workstation. Claude Code is the managing director; **13 skills** under `.claude/skills/` orchestrate a roster of specialized research pods (Accountant · Fundamentals · Industry · DCF · Comps · Macro · Risk · Technicals · Deck Builder · Memo Builder · MD) to produce institutional-quality research — pitch deck, written memo, one-pager, DCF model, comps table, self-contained HTML report — for any US-listed equity.
 
+## Prerequisites — read before first run
+
+**1. You must supply your own API keys via `.env`.** The `.env` file is *not*
+checked into the repo (it's gitignored so no keys ever leak). Copy
+`.env.example` → `.env` at the repo root and fill in your own keys. The desk is
+built on these data providers:
+
+| Key | Powers | Required? | Where to get it |
+|---|---|---|---|
+| `FMP_API_KEY` | All market data — 3-statement financials, quotes, prices, peers, estimates | **Required** — nothing runs without it | [Financial Modeling Prep](https://site.financialmodelingprep.com/) (paid, ~$20-50/mo) |
+| `SEC_EDGAR_USER_AGENT` | SEC EDGAR filings — 10-K / 10-Q / Form 4 / 13F / 13D-G | **Required** — SEC fair-use policy mandates it | Free — set it to `Your Name your.email@example.com` |
+| `FRED_API_KEY` | The `macro` skill — rates, inflation, FX, catalyst calendar | Needed for `/deep-dive` & `macro`; other workflows degrade gracefully without it | Free — [FRED API key](https://fred.stlouisfed.org/docs/api/api_key.html) |
+
+`ANTHROPIC_API_KEY` is **not** required — Claude Code runs on your existing
+Claude subscription, with no per-token API spend.
+
+**2. Generated research is written outside this repo.** Reports never land in
+the git tree. Every run writes to:
+
+```
+~/Desktop/Agentic_Equity_Reports/<TICKER>/
+```
+
+The directory is created automatically on first run, and holds the reports,
+companion files, and shared data caches. Change the location by setting
+`RESEARCH_DIR` in `.env` (e.g. `RESEARCH_DIR=~/research`).
+
 ## Usage
 
 1. Install Python dependencies (Python 3.14; a virtualenv is recommended):
@@ -14,10 +41,9 @@ Local-first multi-agent equity research workstation. Claude Code is the managing
    pip install -r requirements.txt
    ```
 
-2. Set up `.env` (copy `.env.example`):
-   - `FMP_API_KEY` — Financial Modeling Prep ($20-50/mo)
-   - `FRED_API_KEY` — Federal Reserve Economic Data (free)
-   - `SEC_EDGAR_USER_AGENT` — `Your Name your.email@example.com` (SEC fair-use)
+2. Create your `.env` (copy `.env.example` → `.env` and fill in your keys —
+   see [Prerequisites](#prerequisites--read-before-first-run) above for which
+   keys are required and where to get them).
 
 3. From the repo root:
    ```bash
