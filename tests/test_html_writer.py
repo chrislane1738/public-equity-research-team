@@ -11,6 +11,7 @@ from tools.html_writer import (
     _extract_masthead,
     _strip_first_h1,
     _prefix_heading_ids,
+    _wrap_figures,
 )
 
 
@@ -174,3 +175,24 @@ def test_prefix_heading_ids_ignores_headings_without_id():
     out, subs = _prefix_heading_ids(html, "risk")
     assert out == html
     assert subs == []
+
+
+def test_wrap_figures_wraps_standalone_img():
+    html = '<p><img alt="Football field" src="data:image/png;base64,AAA"></p>'
+    out = _wrap_figures(html)
+    assert "<figure>" in out
+    assert "<figcaption>Football field</figcaption>" in out
+    assert 'src="data:image/png;base64,AAA"' in out
+    assert "<p>" not in out
+
+
+def test_wrap_figures_leaves_text_paragraphs_alone():
+    html = "<p>A paragraph with no image.</p>"
+    assert _wrap_figures(html) == html
+
+
+def test_wrap_figures_handles_img_without_alt():
+    html = '<p><img src="data:image/png;base64,AAA"></p>'
+    out = _wrap_figures(html)
+    assert "<figure>" in out
+    assert "<figcaption>" not in out

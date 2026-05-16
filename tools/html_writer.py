@@ -75,6 +75,8 @@ _RE_HEADING_ID = re.compile(
     r'<h([1-6])([^>]*)\sid="([^"]+)"([^>]*)>(.*?)</h\1>', re.DOTALL
 )
 _RE_TAGS = re.compile(r"<[^>]+>")
+_RE_IMG_PARA = re.compile(r"<p>\s*(<img\s+[^>]*?>)\s*</p>", re.DOTALL)
+_RE_IMG_ALT = re.compile(r'alt="([^"]*)"')
 
 _RATING_CLASS = {"BUY": "buy", "HOLD": "hold", "SELL": "sell"}
 
@@ -105,6 +107,21 @@ def _prefix_heading_ids(html: str, pod: str) -> tuple[str, list[tuple[str, str]]
         return f'<h{level}{pre} id="{new_id}"{post}>{text}</h{level}>'
 
     return _RE_HEADING_ID.sub(repl, html), subsections
+
+
+def _wrap_figures(html: str) -> str:
+    """Wrap each standalone <img> (a markdown image rendered on its own line as
+    a solo <p>) in a <figure>, using the image's alt-text as an italic caption.
+    """
+
+    def repl(m: re.Match) -> str:
+        img = m.group(1)
+        alt_m = _RE_IMG_ALT.search(img)
+        caption = alt_m.group(1).strip() if alt_m else ""
+        cap_html = f"<figcaption>{caption}</figcaption>" if caption else ""
+        return f"<figure>{img}{cap_html}</figure>"
+
+    return _RE_IMG_PARA.sub(repl, html)
 
 
 def _extract_masthead(synthesis_md: str) -> dict:
