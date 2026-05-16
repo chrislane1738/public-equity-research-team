@@ -2,6 +2,7 @@
 
 ![tests](https://img.shields.io/badge/tests-167%20passing-2ea44f)
 ![python](https://img.shields.io/badge/python-3.14-3776ab)
+![license](https://img.shields.io/badge/license-MIT-blue)
 ![built with Claude Code](https://img.shields.io/badge/built%20with-Claude%20Code-d97757)
 
 Local-first multi-agent equity research workstation. Claude Code is the managing director; **13 skills** under `.claude/skills/` orchestrate a roster of specialized research pods (Accountant · Fundamentals · Industry · DCF · Comps · Macro · Risk · Technicals · Deck Builder · Memo Builder · MD) to produce institutional-quality research — pitch deck, written memo, one-pager, DCF model, comps table, self-contained HTML report — for any US-listed equity.
