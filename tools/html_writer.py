@@ -9,6 +9,7 @@ Self-contained: open in any browser, including offline. Print-friendly via
 """
 import base64
 import re
+from html import escape as _escape
 from pathlib import Path
 
 import markdown
@@ -229,7 +230,7 @@ def _build_rail(nav: list[tuple[str, str, list[tuple[str, str]]]]) -> str:
     for sec_id, sec_label, subs in nav:
         rows.append(f'<div class="nav-sec" data-sec="{sec_id}">')
         rows.append('<div class="nav-row">')
-        rows.append(f'<a href="#{sec_id}">{sec_label}</a>')
+        rows.append(f'<a href="#{sec_id}">{_escape(sec_label)}</a>')
         if subs:
             rows.append('<span class="chev">&#9654;</span>')
         rows.append('</div>')
@@ -287,11 +288,28 @@ def encode_image_as_data_uri(path: Path) -> str:
     return f"data:{mime};base64,{data}"
 
 
+def _escape_raw_html_in_markdown(md_text: str) -> str:
+    """Escape raw HTML tags embedded in a markdown source string.
+
+    Markdown passes raw HTML through verbatim by default. LLM-generated
+    content may contain injected tags (e.g. <script>, <img onerror=…>).
+    This pre-process step converts those tag characters to HTML entities so
+    they render as visible text rather than executable markup.  Normal
+    markdown constructs (**, ##, tables, fenced code) contain no < / > and
+    are unaffected.
+    """
+    return re.sub(
+        r"<(/?[a-zA-Z][^>]*)>",
+        lambda m: f"&lt;{m.group(1)}&gt;",
+        md_text,
+    )
+
+
 def render_section(section_path: Path) -> str:
     """Render a section.md to HTML. Returns a placeholder if the file is missing."""
     if not section_path.exists():
         return '<p class="placeholder">Section not produced — see logs.</p>'
-    md_text = section_path.read_text()
+    md_text = _escape_raw_html_in_markdown(section_path.read_text())
     return markdown.markdown(md_text, extensions=["tables", "fenced_code", "toc"])
 
 
@@ -331,7 +349,7 @@ def write_report_html(ticker_dir: Path, ticker: str) -> Path:
         nav.append((pod, heading, subs))
         section_blocks.append(
             f'<section class="section" id="{pod}">'
-            f'<h1 class="sec">{heading}</h1>{html}</section>'
+            f'<h1 class="sec">{_escape(heading)}</h1>{html}</section>'
         )
 
     # --- assemble ---
@@ -339,7 +357,7 @@ def write_report_html(ticker_dir: Path, ticker: str) -> Path:
     parts.append("<!DOCTYPE html>\n<html lang='en'>\n<head>")
     parts.append("<meta charset='utf-8'>")
     parts.append("<meta name='viewport' content='width=device-width, initial-scale=1'>")
-    parts.append(f"<title>{ticker} — Equity Research Report</title>")
+    parts.append(f"<title>{_escape(ticker)} — Equity Research Report</title>")
     parts.append(f"<style>{CSS}</style>")
     parts.append("</head>\n<body>")
 
@@ -354,20 +372,20 @@ def write_report_html(ticker_dir: Path, ticker: str) -> Path:
         if mast["spot"]:
             meta_bits.append(f'Reference price ${mast["spot"]}')
         parts.append('<header class="masthead"><div class="top"><div>')
-        parts.append(f'<div class="name">{mast["company"] or ticker}</div>')
+        parts.append(f'<div class="name">{_escape(mast["company"] or ticker)}</div>')
         parts.append(f'<div class="meta">{" · ".join(meta_bits)}</div>')
         parts.append('</div><div class="callbox">')
         parts.append(
-            f'<div class="rating {mast["rating_class"]}">{mast["rating"]}</div>'
+            f'<div class="rating {mast["rating_class"]}">{_escape(mast["rating"])}</div>'
         )
         parts.append(
-            f'<div class="pt">Price Target <b>{mast["price_target"]}</b></div>'
+            f'<div class="pt">Price Target <b>{_escape(mast["price_target"])}</b></div>'
         )
         parts.append('</div></div></header>')
     else:
         parts.append(
             '<header class="masthead"><div class="top"><div>'
-            f'<div class="name">{ticker} — Equity Research Report</div>'
+            f'<div class="name">{_escape(ticker)} — Equity Research Report</div>'
             '</div></div></header>'
         )
 
