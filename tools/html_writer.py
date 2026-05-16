@@ -65,6 +65,47 @@ img { max-width: 100%; height: auto; margin: 1em 0; }
 """
 
 
+_RE_NAME = re.compile(r"\*\*([^*]+?\(([A-Z][A-Z.]{0,5})\))\*\*")
+_RE_RATING = re.compile(r"##\s*Rating:\s*\*\*([A-Za-z]+)\*\*")
+_RE_PT = re.compile(r"##\s*Price Target:\s*\*\*([^*]+?)\*\*")
+_RE_DATE = re.compile(r"Synthesis date:\s*(\d{4}-\d{2}-\d{2})")
+_RE_SPOT = re.compile(r"Reference price:\s*\*{0,2}\$?([\d,.]+)")
+
+_RATING_CLASS = {"BUY": "buy", "HOLD": "hold", "SELL": "sell"}
+
+
+def _extract_masthead(synthesis_md: str) -> dict:
+    """Parse masthead fields from _synthesis.md.
+
+    Returns {} (caller falls back to a plain title) if either the rating or
+    the price target cannot be found — the writer must never fail on a
+    synthesis that drifts from the expected format.
+    """
+    rating_m = _RE_RATING.search(synthesis_md)
+    pt_m = _RE_PT.search(synthesis_md)
+    if not rating_m or not pt_m:
+        return {}
+    rating = rating_m.group(1).strip().upper()
+    name_m = _RE_NAME.search(synthesis_md)
+    if name_m:
+        ticker = name_m.group(2)
+        base = name_m.group(1).rsplit("(", 1)[0].strip().rstrip(",").strip()
+        company = f"{base} — {ticker}"
+    else:
+        company, ticker = "", ""
+    date_m = _RE_DATE.search(synthesis_md)
+    spot_m = _RE_SPOT.search(synthesis_md)
+    return {
+        "company": company,
+        "ticker": ticker,
+        "rating": rating,
+        "rating_class": _RATING_CLASS.get(rating, ""),
+        "price_target": pt_m.group(1).strip(),
+        "date": date_m.group(1) if date_m else "",
+        "spot": spot_m.group(1) if spot_m else "",
+    }
+
+
 def encode_image_as_data_uri(path: Path) -> str:
     """Read a PNG (or any image) and return its data: URI. Empty string if missing."""
     if not path.exists() or not path.is_file():

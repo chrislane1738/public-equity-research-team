@@ -8,6 +8,7 @@ from tools.html_writer import (
     encode_image_as_data_uri,
     render_section,
     write_report_html,
+    _extract_masthead,
 )
 
 
@@ -89,3 +90,40 @@ def test_write_report_html_skips_missing_companion_links(tmp_path):
     html = out.read_text()
     assert 'href="reports/memo.docx"' not in html
     assert 'href="reports/pitch.pptx"' not in html
+
+
+REAL_SYNTH = """# MU — Managing Director Synthesis
+
+**Micron Technology, Inc. (MU)** | Technology / Semiconductors (Memory)
+Synthesis date: 2026-05-16 | Reference price: **$724.66** | Market cap ~ $817B
+
+## Rating: **SELL**
+
+## Price Target: **$400** (~ -45% from $724.66)
+"""
+
+
+def test_extract_masthead_happy_path():
+    m = _extract_masthead(REAL_SYNTH)
+    assert m["rating"] == "SELL"
+    assert m["rating_class"] == "sell"
+    assert m["price_target"] == "$400"
+    assert m["date"] == "2026-05-16"
+    assert m["spot"] == "724.66"
+    assert m["ticker"] == "MU"
+    assert m["company"] == "Micron Technology, Inc. — MU"
+
+
+def test_extract_masthead_fallback_when_rating_missing():
+    assert _extract_masthead("# Synthesis\n\nNo rating here.\n") == {}
+
+
+def test_extract_masthead_fallback_when_pt_missing():
+    assert _extract_masthead("## Rating: **BUY**\n\nNo target.\n") == {}
+
+
+def test_extract_masthead_buy_and_hold_classes():
+    buy = _extract_masthead("## Rating: **BUY**\n\n## Price Target: **$200**\n")
+    assert buy["rating_class"] == "buy"
+    hold = _extract_masthead("## Rating: **Hold**\n\n## Price Target: **$150**\n")
+    assert hold["rating_class"] == "hold"
