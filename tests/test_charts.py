@@ -10,6 +10,7 @@ from tools.charts import (
     sensitivity_heatmap,
     catalyst_timeline,
     price_chart,
+    growth_panel,
 )
 
 
@@ -75,6 +76,43 @@ def test_price_chart_writes_png(tmp_path):
     rows = [{"date": f"2026-04-{d:02d}", "close": 100 + d * 0.5,
              "volume": 1_000_000} for d in range(1, 31)]
     price_chart(prices=rows, sma_windows=[5, 20], path=out, title="NVDA")
+    assert out.exists() and out.stat().st_size > 1000
+
+
+def test_growth_panel_writes_png(tmp_path):
+    out = tmp_path / "growth.png"
+    growth_panel(
+        metrics=[
+            {"name": "Revenue", "periods": ["FY21", "FY22", "FY23", "FY24", "FY25"],
+             "values": [27.7, 30.8, 15.5, 25.1, 37.4], "unit": "$B"},
+            {"name": "EPS", "periods": ["FY21", "FY22", "FY23", "FY24", "FY25"],
+             "values": [5.14, 8.35, -4.45, 1.30, 8.29], "unit": "$"},
+        ],
+        path=out,
+    )
+    assert out.exists() and out.stat().st_size > 1000
+
+
+def test_growth_panel_quarterly(tmp_path):
+    """A quarterly panel (YoY + QoQ card, rotated x labels) renders cleanly."""
+    out = tmp_path / "growth_q.png"
+    q = ["FQ3-24", "FQ4-24", "FQ1-25", "FQ2-25", "FQ3-25", "FQ4-25", "FQ1-26", "FQ2-26"]
+    growth_panel(
+        metrics=[{"name": "Revenue", "periods": q,
+                  "values": [6.6, 7.2, 7.8, 9.0, 11.3, 13.6, 18.0, 23.9], "unit": "$B"}],
+        path=out, periodicity="quarterly",
+    )
+    assert out.exists() and out.stat().st_size > 1000
+
+
+def test_growth_panel_handles_negative_endpoint(tmp_path):
+    """A single-metric panel whose series starts in a loss leaves CAGR 'n.m.'."""
+    out = tmp_path / "growth_neg.png"
+    growth_panel(
+        metrics=[{"name": "EPS", "periods": ["FY23", "FY24", "FY25"],
+                  "values": [-4.45, 1.30, 8.29], "unit": "$"}],
+        path=out,
+    )
     assert out.exists() and out.stat().st_size > 1000
 
 

@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
+from matplotlib.patches import Rectangle
 
 # --- house palette (tied to the report.html institutional theme) ---
 NAVY = "#16243f"   # primary series
@@ -238,4 +239,129 @@ def price_chart(prices: list[dict], sma_windows: list[int],
     ax.yaxis.set_major_formatter("${x:,.0f}")
     ax.legend(loc="best", frameon=False, fontsize=9)
     _style_axes(ax)
+    _fig_save(fig, path)
+
+
+# --- growth-panel helpers ---
+_UNIT_AXIS = {"$B": "US$bn", "$": "US$", "%": "%", "x": "x", "": ""}
+
+
+def _fmt_metric_value(v: float, unit: str) -> str:
+    """Format a metric value for an on-bar data label."""
+    if unit == "$B":
+        return f"${v:,.1f}B"
+    if unit == "$":
+        return f"${v:,.2f}"
+    if unit == "%":
+        return f"{v:,.1f}%"
+    if unit == "x":
+        return f"{v:,.1f}x"
+    return f"{v:,.0f}"
+
+
+def _signed_pct(frac: float) -> str:
+    """Format a fraction as a signed percent, collapsing -0%/+0% to a clean 0%."""
+    s = f"{frac:+.0%}"
+    return "0%" if s in ("+0%", "-0%") else s
+
+
+def _growth_figures(values: list[float],
+                    periodicity: str) -> tuple[str, str, str, str]:
+    """Compute the two growth figures shown on a metric's card.
+
+    Returns (headline, headline_label, sub, sub_label):
+      annual    -> headline = 3-year CAGR, sub = YoY
+      quarterly -> headline = YoY,         sub = QoQ
+      ttm       -> headline = YoY,         sub = QoQ
+    Any figure is 'n.m.' when a zero/negative base makes it meaningless. The
+    annual CAGR targets 3 years and falls back to the longest whole-year
+    window when fewer years of data exist, labelling its actual span.
+    """
+    def pct(new: float, base: float) -> str:
+        return _signed_pct(new / base - 1) if base > 0 and new > 0 else "n.m."
+
+    if periodicity == "annual":
+        step = 3 if len(values) > 3 else max(len(values) - 1, 0)
+        if step >= 1 and values[-1] > 0 and values[-1 - step] > 0:
+            headline = _signed_pct((values[-1] / values[-1 - step]) ** (1 / step) - 1)
+        else:
+            headline = "n.m."
+        yoy = pct(values[-1], values[-2]) if len(values) >= 2 else "n.m."
+        return headline, f"{step}-yr CAGR", yoy, "YoY"
+
+    # quarterly / ttm — YoY (vs four periods back) headline, QoQ sub-figure
+    yoy = pct(values[-1], values[-5]) if len(values) >= 5 else "n.m."
+    qoq = pct(values[-1], values[-2]) if len(values) >= 2 else "n.m."
+    return yoy, "YoY", qoq, "QoQ"
+
+
+def growth_panel(metrics: list[dict], path: Path,
+                 periodicity: str = "annual") -> None:
+    """Small-multiple growth exhibit — one bar chart per metric across periods,
+    each capped with a navy card. The card shows two growth rates: a 3-year
+    CAGR and YoY for an annual panel, or YoY and QoQ for a quarterly/TTM panel.
+
+    Each metric dict carries:
+      name:    str         — metric label, e.g. "Revenue"
+      periods: list[str]   — period labels, e.g. ["FY21", "FY22", ..., "FY25"]
+      values:  list[float] — value per period, in the metric's display unit
+      unit:    str         — one of "$B", "$", "%", "x", "" (drives formatting)
+
+    periodicity: "annual", "quarterly", or "ttm" — sets the YoY and CAGR
+    lookback (1 / 4 / 4 periods per year). All metrics in one panel share it.
+    """
+    n = len(metrics)
+    fig, axes = plt.subplots(
+        2, n, figsize=(3.4 * n, 4.7),
+        gridspec_kw={"height_ratios": [1, 3.6], "hspace": 0.12, "wspace": 0.34},
+    )
+    axes = np.asarray(axes).reshape(2, n)
+
+    for i, metric in enumerate(metrics):
+        periods = metric["periods"]
+        values = metric["values"]
+        unit = metric.get("unit", "")
+        headline, head_label, sub, sub_label = _growth_figures(values, periodicity)
+
+        # --- growth card ---
+        card = axes[0, i]
+        card.axis("off")
+        card.set_xlim(0, 1)
+        card.set_ylim(0, 1)
+        card.add_patch(Rectangle((0.03, 0.06), 0.94, 0.88, transform=card.transAxes,
+                                 facecolor=NAVY, edgecolor="none", clip_on=False))
+        card.text(0.5, 0.76, metric["name"].upper(), transform=card.transAxes,
+                  ha="center", va="center", fontsize=9, fontweight="bold",
+                  color="#aab6cd")
+        card.text(0.5, 0.50, headline, transform=card.transAxes,
+                  ha="center", va="center", fontsize=19, fontweight="bold", color=GOLD)
+        card.text(0.5, 0.26, f"{head_label}   ·   {sub_label} {sub}",
+                  transform=card.transAxes, ha="center", va="center",
+                  fontsize=7.5, color="#aab6cd")
+
+        # --- metric bars ---
+        ax = axes[1, i]
+        bars = ax.bar(periods, values, color=NAVY, width=0.6)
+        if values:
+            bars[-1].set_color(GOLD)  # highlight the most recent period
+        ax.set_ylabel(_UNIT_AXIS.get(unit, ""))
+        for bar, v in zip(bars, values):
+            ax.annotate(_fmt_metric_value(v, unit),
+                        (bar.get_x() + bar.get_width() / 2, bar.get_height()),
+                        xytext=(0, 2 if v >= 0 else -2), textcoords="offset points",
+                        ha="center", va="bottom" if v >= 0 else "top",
+                        fontsize=7.5, color=MUTED)
+        if any(v < 0 for v in values):
+            ax.axhline(0, color=RULE, linewidth=0.8)
+        if values and all(v >= 0 for v in values):
+            ax.set_ylim(0, max(values) * 1.18)
+        else:
+            ax.margins(y=0.15)
+        _style_axes(ax)
+        # rotate x labels when there are many of them, or they run long
+        if len(periods) > 6 or max((len(p) for p in periods), default=0) > 7:
+            for label in ax.get_xticklabels():
+                label.set_rotation(45)
+                label.set_horizontalalignment("right")
+
     _fig_save(fig, path)

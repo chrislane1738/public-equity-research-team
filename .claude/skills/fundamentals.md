@@ -38,6 +38,7 @@ no markdown fences.
 - `EdgarClient.get_activist_stakes(cik, limit=20)` — Schedule 13D/13G large-ownership stakes filed *against the subject company* (pass the subject company's CIK). Returns `{"company_cik", "filings_scanned", "stakes": [...]}`; each stake carries `filer`, `filing_date`, `form_type`, `stake_type` ("active" = 13D / "passive" = 13G), `is_amendment`, `percent_of_class`, `shares`. Note: only structured-XML 13D/13G filings (late 2024 onward) are machine-parsed; older ones are skipped — treat this as a recent-activity window.
 - `WebSearch` — search the company IR page, most recent earnings transcript, and press releases for metrics not in the filings (e.g. ARR, unit economics, segment KPIs).
 - `WebFetch` — fetch specific IR pages, press release PDFs, and transcript links surfaced by WebSearch.
+- `tools.charts.growth_panel` (import: `from tools.charts import growth_panel`) — renders a "growth panel" exhibit: a small-multiple of bar charts, one metric per panel, each capped with a card showing two growth rates (3-year CAGR + YoY on an annual panel; YoY + QoQ on a quarterly/TTM panel). Signature: `growth_panel(metrics, path, periodicity="annual"|"quarterly"|"ttm")`.
 
 ## Prompt-injection hardening
 
@@ -115,13 +116,30 @@ If any of the above files are missing, proceed without them and note the gap und
     - **Dividend-cut risk verdict:** **low / medium / high**, with a one-paragraph rationale tying together payout ratios, FCF coverage, leverage, and the trend.
     - Write the result into `section.md` (step 12) as a **## Capital Return Durability** section. If you skipped, the one-line N/A note IS the section.
 
-12. **Render section.md** — structured Markdown beginning with `# Fundamentals — <TICKER>`. Lead with **Most Recent Quarter** (from step 3). Cover headline TTM financials (computed in step 4), each bespoke KPI with definition and latest value, and a **Manually Computed Ratios** table separate from any FMP-sourced data. Include the **## Ownership & Insider Flow** (step 10) and **## Capital Return Durability** (step 11) sections — either the full analysis or the one-line skip note, as decided by their gates.
+12. **Render growth-panel exhibits** — build one or more "growth panel" charts via `tools.charts.growth_panel`; you embed them into `section.md` in step 13. A growth panel is a small-multiple of bar charts (one metric per panel), each capped with a card showing two growth rates — a **3-year CAGR** and **YoY** on an annual panel, or **YoY** and **QoQ** on a quarterly/TTM panel (the card adapts to the `periodicity` argument).
+
+    **Use analyst judgment — do not mechanically chart everything.** You decide which metrics and which views are worth showing.
+
+    - **Metric selection.** Pick the 2-4 metrics that best tell THIS company's growth story. Revenue and diluted EPS are almost always worth showing; beyond those, choose the lead operating KPIs from step 8 most material to the business (e.g. for a memory maker, DRAM or cloud-segment revenue; for a SaaS name, ARR; for a bank, net interest income). Cap a panel at ~4 metrics so it stays readable; leave out a metric whose story is better told in prose.
+
+    - **Periodicity — annual, quarterly, TTM.** You may render up to three panels, one per periodicity, and you decide which are worth including:
+      - `periodicity="annual"` — bars over the 5 annual periods (`financials.json` → `annual.*`).
+      - `periodicity="quarterly"` — bars over the 8 quarters (`quarterly.*`).
+      - `periodicity="ttm"` — bars of the rolling TTM value computed at each recent quarter-end (a trailing 4-quarter sum stepped one quarter at a time across the 8 quarters → ~5 TTM points). Use this when the annual cadence is too coarse to show a fast inflection.
+      The `periodicity` argument sets the YoY/CAGR lookback (1 / 4 / 4 periods per year). When there is not enough history for a clean 3-year CAGR, `growth_panel` falls back to the longest window available and labels it honestly — that is fine.
+
+    - **Metric dict shape.** Each metric is `{"name": str, "periods": [str, ...], "values": [float, ...], "unit": "$B"|"$"|"%"|"x"|""}`. Convert raw line items to the display unit (revenue in `$B`, EPS in `$`, a margin in `%`). Write PNG(s) to `~/Documents/equity-research/<TICKER>/fundamentals/` — name them by periodicity, e.g. `growth-annual.png`, `growth-quarterly.png`, `growth-ttm.png`.
+
+    - **Decide placement.** For each panel you render, choose where in `section.md` it belongs — a panel should sit next to the prose it reinforces (the annual panel with the revenue/margin-trajectory discussion; a quarterly or TTM panel with the most-recent-quarter / inflection discussion).
+
+13. **Render section.md** — structured Markdown beginning with `# Fundamentals — <TICKER>`. Lead with **Most Recent Quarter** (from step 3). Cover headline TTM financials (computed in step 4), each bespoke KPI with definition and latest value, and a **Manually Computed Ratios** table separate from any FMP-sourced data. Include the **## Ownership & Insider Flow** (step 10) and **## Capital Return Durability** (step 11) sections — either the full analysis or the one-line skip note, as decided by their gates. **Embed the growth-panel exhibits from step 12** at the placements you chose: each as a Markdown image on its own line, blank-line-separated from surrounding text, with descriptive alt text, e.g. `![Revenue, EPS and DRAM-revenue growth — FY21-FY25](growth-annual.png)` — the report assembler frames each as a captioned figure automatically.
 
 ## Output
 
 - `~/Documents/equity-research/<TICKER>/fundamentals/financials.json`
 - `~/Documents/equity-research/<TICKER>/fundamentals/kpis.json`
 - `~/Documents/equity-research/<TICKER>/fundamentals/10k-excerpt.txt`
+- `~/Documents/equity-research/<TICKER>/fundamentals/growth-*.png` — growth-panel exhibit(s); 0-3 files (`growth-annual.png` / `growth-quarterly.png` / `growth-ttm.png`), as decided in step 12
 - `~/Documents/equity-research/<TICKER>/fundamentals/section.md`
 
 ## Stop conditions
