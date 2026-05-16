@@ -26,6 +26,25 @@ This skill loads in-context. Do not dispatch as a subagent.
 - Companion .docx / .pptx / .xlsx are linked via relative paths. Missing companions silently skipped.
 - All PNG charts in section.md files are inlined as base64. Missing chart files left as broken images (not fatal).
 
+## Report design
+
+`tools.html_writer` renders the report in a fixed **institutional sell-side**
+style — the deterministic assembler owns the look; there is no per-run styling
+choice. Key elements:
+
+- **Masthead** — a navy band auto-populated from `_synthesis.md`: company name +
+  ticker, an `Equity Research · Deep-Dive · <date> · Reference price` metadata
+  line, and the rating (color-keyed red/amber/green for Sell/Hold/Buy) with the
+  price target. Falls back to a plain title if the synthesis lacks a parseable
+  rating or price target.
+- **Left quicklinks rail** — a fixed navy rail listing the eight sections; each
+  has a chevron that expands its subsection headings. Hidden on print and below
+  a 1080px viewport.
+- **Body** — Georgia/serif headlines, navy accents, framed charts with captions.
+
+Changing the look means editing `tools/html_writer.py` (`CSS`, `RAIL_JS`, and
+`write_report_html`), not this skill's workflow.
+
 ## Tools Used
 
 - Bash (to invoke `tools.html_writer`)
