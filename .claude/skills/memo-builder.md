@@ -107,4 +107,4 @@ Output is written to `reports/memo.docx`.
 |----------|------|
 | Initiation memo | `<TICKER>/reports/memo.docx` |
 
-All paths are relative to `~/Documents/equity-research/`.
+All paths are relative to `~/Desktop/Agentic_Equity_Reports/`.

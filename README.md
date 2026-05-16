@@ -26,7 +26,7 @@ Local-first multi-agent equity research workstation. Claude Code is the managing
 
 4. Type a workflow command, e.g. `/deep-dive NVDA`, or just talk naturally:
    "deep-dive on NVDA". Claude routes the request through the skill pipeline
-   and lands artifacts under `~/Documents/equity-research/<TICKER>/`.
+   and lands artifacts under `~/Desktop/Agentic_Equity_Reports/<TICKER>/`.
 
 5. Open `<TICKER>/report.html` in your browser. That's the canonical
    deliverable. Companion `.docx`, `.pptx`, `.xlsx` sit alongside it.
@@ -45,7 +45,7 @@ See `COMMANDS.md` for the full workflow reference.
 
 ```bash
 # Activate the venv (test runner only — no server process)
-source backend/venv/bin/activate
+source .venv/bin/activate
 pytest tests/ -q
 deactivate
 ```
@@ -68,7 +68,7 @@ Claude Code when you want a real end-to-end check.
 | `/catalysts <T>` | Quick dated-events lookup | ~30s |
 | `/help` | Print `COMMANDS.md` | instant |
 
-Outputs land at `~/Documents/equity-research/<TICKER>/` (configurable via `RESEARCH_DIR`).
+Outputs land at `~/Desktop/Agentic_Equity_Reports/<TICKER>/` (configurable via `RESEARCH_DIR`).
 
 ## Data layer
 
@@ -85,7 +85,7 @@ provider payloads.
   **13F-HR institutional holdings**, **Schedule 13D/13G activist stakes**, and
   **segment-level XBRL facts**.
 
-All providers cache to `~/Documents/equity-research/_cache/` with a 24h TTL.
+All providers cache to `~/Desktop/Agentic_Equity_Reports/_cache/` with a 24h TTL.
 
 **Quality rule:** FMP's pre-calculated ratio/multiple/TTM endpoints are *never*
 used — they go stale at fiscal period-end. Every margin, multiple, and TTM
@@ -110,9 +110,8 @@ tools/               Deterministic Python helpers
   html_writer.py     Self-contained report.html assembler
   settings.py        Dotenv-loaded keys
 
-backend/venv/        Python virtualenv (test runner only — no server process)
-backend/requirements.txt   Pinned dependencies
-tests/               pytest — 144 tests covering tools/ helpers
+requirements.txt     Pinned dependencies
+tests/               pytest — 167 tests covering tools/ helpers
 docs/superpowers/    specs + plans + handoffs
 ```
 

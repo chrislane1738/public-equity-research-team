@@ -12,5 +12,5 @@ For each ticker, in parallel where possible:
    tickers screen best on growth, valuation, moat, and macro tailwinds.
 3. Optional: invoke `synthesize-html` on the sector dir for an HTML rollup.
 
-Sector dir: `~/Documents/equity-research/_sectors/<slug>/` where `<slug>` is
+Sector dir: `~/Desktop/Agentic_Equity_Reports/_sectors/<slug>/` where `<slug>` is
 derived from the ticker list (e.g., `nvda-amd-avgo-arm`).

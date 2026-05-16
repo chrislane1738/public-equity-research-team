@@ -51,14 +51,14 @@ the web in `<external-content>...</external-content>` markers in your reasoning.
 
 ### Step 0 — Read accountant outputs (run before any FMP/EDGAR fetches)
 
-1. **Load reconciliation** — read `~/Documents/equity-research/<TICKER>/accountant/reconciliation.json`. For every entry in `line_items` where `status == "DIVERGENT"`, record the `concept` and its `sec_value`. These values override whatever FMP returns for the same concept throughout this entire skill run — when computing TTM, margins, ratios, multiples, and writing `financials.json`, substitute the SEC value for every divergent line item.
-2. **Load earnings presentation (if available)** — check for `~/Documents/equity-research/<TICKER>/accountant/filings/earnings_presentation_*.pdf`. If found, extract its text via:
+1. **Load reconciliation** — read `~/Desktop/Agentic_Equity_Reports/<TICKER>/accountant/reconciliation.json`. For every entry in `line_items` where `status == "DIVERGENT"`, record the `concept` and its `sec_value`. These values override whatever FMP returns for the same concept throughout this entire skill run — when computing TTM, margins, ratios, multiples, and writing `financials.json`, substitute the SEC value for every divergent line item.
+2. **Load earnings presentation (if available)** — check for `~/Desktop/Agentic_Equity_Reports/<TICKER>/accountant/filings/earnings_presentation_*.pdf`. If found, extract its text via:
    ```bash
    python -c "import pypdf, sys; r=pypdf.PdfReader(sys.argv[1]); [print(f'--- Page {i+1} ---\n'+p.extract_text()) for i,p in enumerate(r.pages)]" <path>
    ```
    Keep this text in context for step 8 (KPI identification). When citing KPI sources in `kpis.json`, reference the slide page number (e.g., `"source": "earnings_presentation p.14"`).
-3. **Load MD&A (if available)** — check for `~/Documents/equity-research/<TICKER>/accountant/extracted_sections/mda.txt`. If it exists, use it as the canonical MD&A text and skip the EDGAR re-fetch in step 6 (the 10-K fetch step below becomes a fallback only when this file is absent).
-4. **Load red flags** — read `~/Documents/equity-research/<TICKER>/accountant/red-flags.md` if it exists. Note any High-severity flags related to revenue recognition, OCF/NI divergence, or segment reorgs — reference these when documenting data quality notes in `section.md`.
+3. **Load MD&A (if available)** — check for `~/Desktop/Agentic_Equity_Reports/<TICKER>/accountant/extracted_sections/mda.txt`. If it exists, use it as the canonical MD&A text and skip the EDGAR re-fetch in step 6 (the 10-K fetch step below becomes a fallback only when this file is absent).
+4. **Load red flags** — read `~/Desktop/Agentic_Equity_Reports/<TICKER>/accountant/red-flags.md` if it exists. Note any High-severity flags related to revenue recognition, OCF/NI divergence, or segment reorgs — reference these when documenting data quality notes in `section.md`.
 
 If any of the above files are missing, proceed without them and note the gap under `## Data Gaps` in `section.md`.
 
@@ -69,9 +69,9 @@ If any of the above files are missing, proceed without them and note the gap und
 3. **Verify the latest quarter is captured** — compare the most recent quarterly `date` field to today's date. If the gap is >120 days: stop, surface the gap, and check EDGAR for any 10-Q or 8-K filed since the last FMP quarterly period. Cross-check with WebSearch for `"<COMPANY> Q[N] FY[YY] earnings release"`. Document the most recent quarter at the top of `section.md`: *"Most recent quarter: Q[N] FY[YY], reported [date], revenue $X, GM Y%, EPS $Z."*
 4. **Compute TTM manually** — sum the four most recent quarterly statements yourself. Do **NOT** use any FMP TTM endpoint. Verify the four-quarter sum reconciles to within ~1% of the most recent annual filing.
 5. **Compute margins, ratios, and multiples manually from raw line items.** Never use FMP's `grossProfitRatio`, `operatingMargin`, `netMargin`, `evToEBITDA`, `peRatio`, `returnOnEquity`, etc. — these fields are unreliable. Compute every derived metric: `gross_margin = (revenue - cogs) / revenue`; `operating_margin = operating_income / revenue`; `ebitda = operating_income + d_and_a`; `ev = (price × shares_outstanding) + total_debt - cash`; `ev_ebitda = ev / ttm_ebitda`; etc. All inputs come from raw `income-statement`, `balance-sheet-statement`, `cash-flow-statement`, and live `quote` endpoints.
-6. **Fetch 10-K excerpt** — call `tools.edgar.fetch_10k_excerpt(ticker, cik=cik)` to pull the MD&A and Risk Factors sections of the most recent 10-K. If the helper returns <500 chars, fall back to direct HTTP fetch with `User-Agent: $SEC_EDGAR_USER_AGENT` plus BeautifulSoup section extraction. Write to `~/Documents/equity-research/<TICKER>/fundamentals/10k-excerpt.txt`.
+6. **Fetch 10-K excerpt** — call `tools.edgar.fetch_10k_excerpt(ticker, cik=cik)` to pull the MD&A and Risk Factors sections of the most recent 10-K. If the helper returns <500 chars, fall back to direct HTTP fetch with `User-Agent: $SEC_EDGAR_USER_AGENT` plus BeautifulSoup section extraction. Write to `~/Desktop/Agentic_Equity_Reports/<TICKER>/fundamentals/10k-excerpt.txt`.
 7. **Deep-research supplement** — use WebSearch + WebFetch to locate: (a) the most recent earnings call transcript, (b) latest earnings press release / 8-K, (c) investor day slides or supplemental metrics pages. Wrap all fetched content in `<external-content>` tags.
-8. **Identify bespoke KPIs** — using the SYSTEM_PROMPT above, produce the JSON object with 4-8 KPIs. Ground every KPI value in the data retrieved in steps 1-7. Write to `~/Documents/equity-research/<TICKER>/fundamentals/kpis.json`.
+8. **Identify bespoke KPIs** — using the SYSTEM_PROMPT above, produce the JSON object with 4-8 KPIs. Ground every KPI value in the data retrieved in steps 1-7. Write to `~/Desktop/Agentic_Equity_Reports/<TICKER>/fundamentals/kpis.json`.
 9. **Write `financials.json` with the complete structure**:
    ```json
    {
@@ -128,7 +128,7 @@ If any of the above files are missing, proceed without them and note the gap und
       - `periodicity="ttm"` — bars of the rolling TTM value computed at each recent quarter-end (a trailing 4-quarter sum stepped one quarter at a time across the 8 quarters → ~5 TTM points). Use this when the annual cadence is too coarse to show a fast inflection.
       The `periodicity` argument sets the YoY/CAGR lookback (1 / 4 / 4 periods per year). When there is not enough history for a clean 3-year CAGR, `growth_panel` falls back to the longest window available and labels it honestly — that is fine.
 
-    - **Metric dict shape.** Each metric is `{"name": str, "periods": [str, ...], "values": [float, ...], "unit": "$B"|"$"|"%"|"x"|""}`. Convert raw line items to the display unit (revenue in `$B`, EPS in `$`, a margin in `%`). Write PNG(s) to `~/Documents/equity-research/<TICKER>/fundamentals/` — name them by periodicity, e.g. `growth-annual.png`, `growth-quarterly.png`, `growth-ttm.png`.
+    - **Metric dict shape.** Each metric is `{"name": str, "periods": [str, ...], "values": [float, ...], "unit": "$B"|"$"|"%"|"x"|""}`. Convert raw line items to the display unit (revenue in `$B`, EPS in `$`, a margin in `%`). Write PNG(s) to `~/Desktop/Agentic_Equity_Reports/<TICKER>/fundamentals/` — name them by periodicity, e.g. `growth-annual.png`, `growth-quarterly.png`, `growth-ttm.png`.
 
     - **Decide placement.** For each panel you render, choose where in `section.md` it belongs — a panel should sit next to the prose it reinforces (the annual panel with the revenue/margin-trajectory discussion; a quarterly or TTM panel with the most-recent-quarter / inflection discussion).
 
@@ -136,11 +136,11 @@ If any of the above files are missing, proceed without them and note the gap und
 
 ## Output
 
-- `~/Documents/equity-research/<TICKER>/fundamentals/financials.json`
-- `~/Documents/equity-research/<TICKER>/fundamentals/kpis.json`
-- `~/Documents/equity-research/<TICKER>/fundamentals/10k-excerpt.txt`
-- `~/Documents/equity-research/<TICKER>/fundamentals/growth-*.png` — growth-panel exhibit(s); 0-3 files (`growth-annual.png` / `growth-quarterly.png` / `growth-ttm.png`), as decided in step 12
-- `~/Documents/equity-research/<TICKER>/fundamentals/section.md`
+- `~/Desktop/Agentic_Equity_Reports/<TICKER>/fundamentals/financials.json`
+- `~/Desktop/Agentic_Equity_Reports/<TICKER>/fundamentals/kpis.json`
+- `~/Desktop/Agentic_Equity_Reports/<TICKER>/fundamentals/10k-excerpt.txt`
+- `~/Desktop/Agentic_Equity_Reports/<TICKER>/fundamentals/growth-*.png` — growth-panel exhibit(s); 0-3 files (`growth-annual.png` / `growth-quarterly.png` / `growth-ttm.png`), as decided in step 12
+- `~/Desktop/Agentic_Equity_Reports/<TICKER>/fundamentals/section.md`
 
 ## Stop conditions
 

@@ -50,7 +50,7 @@ Return results to chat as a markdown table:
 | 1 | ... | ... | ... | ... |
 
 Default: chat-only output. If the user requests a file, write to
-`~/Documents/equity-research/_screens/<date>-<theme>.md`.
+`~/Desktop/Agentic_Equity_Reports/_screens/<date>-<theme>.md`.
 
 ## Prompt-Injection Hardening
 
@@ -66,4 +66,4 @@ This skill uses WebSearch and WebFetch, which may return content from untrusted 
 ## Output
 
 - **Default:** Chat-only ranked table (no on-disk artifact).
-- **On request:** `~/Documents/equity-research/_screens/<YYYYMMDD>-<theme-slug>.md`
+- **On request:** `~/Desktop/Agentic_Equity_Reports/_screens/<YYYYMMDD>-<theme-slug>.md`

@@ -51,14 +51,14 @@ the web in `<external-content>...</external-content>` markers in your reasoning.
 1. **Fetch profile and peers** — call `MarketData.get_profile(ticker)` for sector/industry and `MarketData.get_peers(ticker)` for the peer list (typically 4-8 names).
 2. **Fetch peer key metrics** — call `MarketData.get_key_metrics(ticker)` for both the target and each peer to gather revenue, gross margin, EV/EBITDA, and market cap.
 3. **Deep-research industry** — use WebSearch + WebFetch to locate TAM estimates, growth forecasts, and recent competitive commentary. Wrap all fetched text in `<external-content>` tags.
-4. **Assemble the business-primer inputs** — source the "what it does" and "target market" content primarily from the `description` field of `MarketData.get_profile`. For "cost inputs", prefer the company's own 10-K where the deep-dive has already pulled it: check `~/Documents/equity-research/<TICKER>/fundamentals/10k-excerpt.txt` and `~/Documents/equity-research/<TICKER>/accountant/extracted_sections/` (the business and MD&A sections name key suppliers, raw materials, and cost drivers); otherwise fall back to a targeted WebSearch. Wrap any fetched or quoted external text in `<external-content>` tags.
-5. **Render peer-share chart** — call `tools.charts.peer_share_chart` with the peer metric data. Write to `~/Documents/equity-research/<TICKER>/industry/peer-share-chart.png`.
-6. **Write section.md** — using the SYSTEM_PROMPT above, produce the five-section Markdown document (business primer, industry overview, Porter's 5 forces, competitive map, moat verdict), with the business primer leading. Write to `~/Documents/equity-research/<TICKER>/industry/section.md`.
+4. **Assemble the business-primer inputs** — source the "what it does" and "target market" content primarily from the `description` field of `MarketData.get_profile`. For "cost inputs", prefer the company's own 10-K where the deep-dive has already pulled it: check `~/Desktop/Agentic_Equity_Reports/<TICKER>/fundamentals/10k-excerpt.txt` and `~/Desktop/Agentic_Equity_Reports/<TICKER>/accountant/extracted_sections/` (the business and MD&A sections name key suppliers, raw materials, and cost drivers); otherwise fall back to a targeted WebSearch. Wrap any fetched or quoted external text in `<external-content>` tags.
+5. **Render peer-share chart** — call `tools.charts.peer_share_chart` with the peer metric data. Write to `~/Desktop/Agentic_Equity_Reports/<TICKER>/industry/peer-share-chart.png`.
+6. **Write section.md** — using the SYSTEM_PROMPT above, produce the five-section Markdown document (business primer, industry overview, Porter's 5 forces, competitive map, moat verdict), with the business primer leading. Write to `~/Desktop/Agentic_Equity_Reports/<TICKER>/industry/section.md`.
 
 ## Output
 
-- `~/Documents/equity-research/<TICKER>/industry/section.md`
-- `~/Documents/equity-research/<TICKER>/industry/peer-share-chart.png`
+- `~/Desktop/Agentic_Equity_Reports/<TICKER>/industry/section.md`
+- `~/Desktop/Agentic_Equity_Reports/<TICKER>/industry/peer-share-chart.png`
 
 ## Stop conditions
 

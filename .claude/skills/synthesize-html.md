@@ -9,13 +9,13 @@ This skill loads in-context. Do not dispatch as a subagent.
 
 ## Workflow
 
-1. Confirm the target directory exists at `~/Documents/equity-research/<TICKER>/`
+1. Confirm the target directory exists at `~/Desktop/Agentic_Equity_Reports/<TICKER>/`
    and contains at least `synthesis/_synthesis.md`.
 2. Invoke the deterministic assembler via Bash:
    ```bash
    python -c "from tools.html_writer import write_report_html; \
               from pathlib import Path; \
-              write_report_html(Path.home() / 'Documents/equity-research/<TICKER>', '<TICKER>')"
+              write_report_html(Path.home() / 'Desktop/Agentic_Equity_Reports/<TICKER>', '<TICKER>')"
    ```
 3. Confirm `<TICKER>/report.html` exists and report its size.
 4. Return the absolute path to the report.

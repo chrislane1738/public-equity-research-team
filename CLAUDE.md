@@ -8,7 +8,7 @@ tool), and slash commands — to produce institutional-quality equity research.
 
 Given a ticker (and optionally a workflow type), orchestrate the research desk
 to produce a single self-contained `report.html` plus companion .docx / .pptx /
-.xlsx artifacts under `~/Documents/equity-research/<TICKER>/`.
+.xlsx artifacts under `~/Desktop/Agentic_Equity_Reports/<TICKER>/`.
 
 ## Available skills (in `.claude/skills/`) — 13 skills
 
@@ -64,7 +64,7 @@ No FactSet / Kensho / Daloopa / Moody's / LSEG / PitchBook — out of scope.
 
 ## Output convention
 
-Every ticker's artifacts land under `~/Documents/equity-research/<TICKER>/`:
+Every ticker's artifacts land under `~/Desktop/Agentic_Equity_Reports/<TICKER>/`:
 
 ```
 <TICKER>/

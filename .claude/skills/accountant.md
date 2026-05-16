@@ -283,7 +283,7 @@ primary_document, output_path)`:
 
 Save to:
 ```
-~/Documents/equity-research/<TICKER>/accountant/filings/<FORM>_<YYYY-MM-DD>_<ACCESSION>.htm
+~/Desktop/Agentic_Equity_Reports/<TICKER>/accountant/filings/<FORM>_<YYYY-MM-DD>_<ACCESSION>.htm
 ```
 (or `.pdf` if `primary_document` ends in `.pdf`). Create the directory with
 `mkdir -p` via Bash if it does not exist.
@@ -336,7 +336,7 @@ Read the downloaded 10-K HTML file. Call
 
 Save each extracted section as plain text to:
 ```
-~/Documents/equity-research/<TICKER>/accountant/extracted_sections/<section_id>.txt
+~/Desktop/Agentic_Equity_Reports/<TICKER>/accountant/extracted_sections/<section_id>.txt
 ```
 
 If `extract_filing_section` returns an empty string for any section, attempt a
@@ -724,7 +724,7 @@ Write 400–700 words. Structure:
 
 ## Output paths
 
-All artifacts are written under `~/Documents/equity-research/<TICKER>/accountant/`:
+All artifacts are written under `~/Desktop/Agentic_Equity_Reports/<TICKER>/accountant/`:
 
 | Artifact | Path |
 |---|---|

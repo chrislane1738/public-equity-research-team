@@ -6,10 +6,14 @@ import pytest
 
 
 def test_settings_loads_required_keys(monkeypatch, tmp_path):
+    # Pre-set the load sentinel so settings.py skips load_dotenv entirely —
+    # this isolates the test from whatever the real .env file contains.
+    monkeypatch.setenv("_TOOLS_SETTINGS_LOADED", "1")
     monkeypatch.setenv("FMP_API_KEY", "test-fmp")
     monkeypatch.setenv("FRED_API_KEY", "test-fred")
     monkeypatch.setenv("SEC_EDGAR_USER_AGENT", "Test User test@example.com")
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("RESEARCH_DIR", raising=False)
 
     from tools import settings as s
     importlib.reload(s)
@@ -17,7 +21,7 @@ def test_settings_loads_required_keys(monkeypatch, tmp_path):
     assert s.FMP_API_KEY == "test-fmp"
     assert s.FRED_API_KEY == "test-fred"
     assert s.SEC_EDGAR_USER_AGENT == "Test User test@example.com"
-    assert s.RESEARCH_DIR.name == "equity-research"
+    assert s.RESEARCH_DIR.name == "equity-research"  # code default when RESEARCH_DIR unset
 
 
 def test_settings_research_dir_override(monkeypatch, tmp_path):

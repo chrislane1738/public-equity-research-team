@@ -45,4 +45,4 @@ Run an earnings-update on `$1`. Unlike `/deep-dive`, this skips comps + the 5-po
 
 8. **If html selected:** invoke `synthesize-html` skill in-context to assemble `<TICKER>/report.html`.
 
-Output: only the artifacts produced per the deliverable selection. `~/Documents/equity-research/$1/{reports/memo.docx, report.html}` depending on Checkpoint.
+Output: only the artifacts produced per the deliverable selection. `~/Desktop/Agentic_Equity_Reports/$1/{reports/memo.docx, report.html}` depending on Checkpoint.

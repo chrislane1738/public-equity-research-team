@@ -122,7 +122,7 @@ Apply the SYSTEM_PROMPT (verbatim above) to produce `comps/section.md`, covering
 | Box-plot chart | `<TICKER>/comps/box-plot.png` |
 | Narrative prose | `<TICKER>/comps/section.md` |
 
-All paths are relative to `~/Documents/equity-research/`.
+All paths are relative to `~/Desktop/Agentic_Equity_Reports/`.
 
 > **Contract note:** `peer-multiples.json` must be written before the `dcf` skill runs.
 > In the standard deep-dive workflow, `comps` runs before `dcf`.

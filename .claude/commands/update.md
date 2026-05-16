@@ -6,17 +6,17 @@ argument-hint: <TICKER>
 Run an `/update` on `$1`. This is a lightweight refresh on a ticker we've previously deep-dove. It re-runs only the pods that change quarter-over-quarter, reuses the prior peer list, and produces a diff-style synthesis vs the prior `_synthesis.md` (rating change, PT delta, what moved).
 
 Use `/update` when:
-- You've previously run `/deep-dive` on this ticker (so `~/Documents/equity-research/$1/synthesis/_synthesis.md` exists).
+- You've previously run `/deep-dive` on this ticker (so `~/Desktop/Agentic_Equity_Reports/$1/synthesis/_synthesis.md` exists).
 - You want a quarterly refresh rather than a full ground-up rebuild.
 - The competitive landscape / risk profile hasn't materially changed.
 
-If `~/Documents/equity-research/$1/synthesis/_synthesis.md` does NOT exist, halt and report: *"No prior synthesis for $1. Run `/deep-dive $1` first; `/update` is for refreshes only."*
+If `~/Desktop/Agentic_Equity_Reports/$1/synthesis/_synthesis.md` does NOT exist, halt and report: *"No prior synthesis for $1. Run `/deep-dive $1` first; `/update` is for refreshes only."*
 
 ## Pipeline
 
-1. **Validate ticker + verify prior synthesis exists.** Confirm `MarketData.get_profile($1)` returns non-empty AND `~/Documents/equity-research/$1/synthesis/_synthesis.md` exists. If either fails, halt and report.
+1. **Validate ticker + verify prior synthesis exists.** Confirm `MarketData.get_profile($1)` returns non-empty AND `~/Desktop/Agentic_Equity_Reports/$1/synthesis/_synthesis.md` exists. If either fails, halt and report.
 
-2. **Capture prior baseline.** Read `~/Documents/equity-research/$1/synthesis/_synthesis.md`. Extract the prior **rating** (Buy/Hold/Sell), **price target**, and **synthesis date** (from frontmatter or top heading). Hold these in context for the diff in Step 9.
+2. **Capture prior baseline.** Read `~/Desktop/Agentic_Equity_Reports/$1/synthesis/_synthesis.md`. Extract the prior **rating** (Buy/Hold/Sell), **price target**, and **synthesis date** (from frontmatter or top heading). Hold these in context for the diff in Step 9.
 
 3. **Dispatch `accountant` skill with `mode="earnings-update"`** (the light variant — see `.claude/skills/accountant.md` Mode parameter section). Pulls latest 8-K + earnings deck, narrow reconciliation, reduced red-flag set. Wait for return signal.
 
@@ -25,7 +25,7 @@ If `~/Documents/equity-research/$1/synthesis/_synthesis.md` does NOT exist, halt
    - `PAUSE_FOR_REVIEW`: list divergent items, ask per-concept resolution.
    - `FMP_ONLY_FALLBACK`: note skip, ask whether to continue.
 
-5. **PAUSE CHECKPOINT B — confirm peer list.** Default to the peer list from the prior run by reading `~/Documents/equity-research/$1/comps/peer-multiples.json` (the `peers` field). Present to user: *"Prior peer list: [AMD, NVDA, AVGO, ARM]. Use same? (yes / no / new list: TICK1,TICK2,…)"* Wait for user confirmation or modification.
+5. **PAUSE CHECKPOINT B — confirm peer list.** Default to the peer list from the prior run by reading `~/Desktop/Agentic_Equity_Reports/$1/comps/peer-multiples.json` (the `peers` field). Present to user: *"Prior peer list: [AMD, NVDA, AVGO, ARM]. Use same? (yes / no / new list: TICK1,TICK2,…)"* Wait for user confirmation or modification.
 
 6. **Refresh the per-quarter-sensitive pods (parallel).** Dispatch in a single message, all as subagents:
    - `fundamentals` — TTM moves every quarter.

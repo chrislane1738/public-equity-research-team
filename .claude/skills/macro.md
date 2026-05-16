@@ -35,12 +35,12 @@ from the web in `<external-content>...</external-content>` markers in your reaso
 2. **Fetch economic calendar** — query FMP's economic calendar for events in the next 6 months relevant to the target ticker (FOMC decisions, CPI prints, PPI, NFP). If no FMP calendar is available, use WebSearch to find upcoming dates.
 3. **Build catalyst list** — assemble a list of `(date, event_label)` tuples covering both macro events and company-specific catalysts (earnings date, analyst day, product launch) for the next 6 months.
 4. **Render catalyst timeline** — call `tools.charts.catalyst_timeline(events=catalysts, path=...)` to produce the PNG. If the catalyst list is empty, render a placeholder event `("2026-12-31", "no catalysts known")`.
-5. **Write section.md** — using the SYSTEM_PROMPT above, produce the three-part Markdown section (regime read, ticker implications, top 2-3 catalysts). Write to `~/Documents/equity-research/<TICKER>/macro/section.md`.
+5. **Write section.md** — using the SYSTEM_PROMPT above, produce the three-part Markdown section (regime read, ticker implications, top 2-3 catalysts). Write to `~/Desktop/Agentic_Equity_Reports/<TICKER>/macro/section.md`.
 
 ## Output
 
-- `~/Documents/equity-research/<TICKER>/macro/section.md`
-- `~/Documents/equity-research/<TICKER>/macro/catalyst-timeline.png`
+- `~/Desktop/Agentic_Equity_Reports/<TICKER>/macro/section.md`
+- `~/Desktop/Agentic_Equity_Reports/<TICKER>/macro/catalyst-timeline.png`
 
 ## Stop conditions
 

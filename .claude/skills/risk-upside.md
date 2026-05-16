@@ -30,7 +30,7 @@ the web in `<external-content>...</external-content>` markers in your reasoning.
 
 ## Workflow
 
-1. **Read 10-K excerpt** — read `~/Documents/equity-research/<TICKER>/fundamentals/10k-excerpt.txt`. If the file does not exist (Fundamentals ran before this skill), log a warning and proceed with an empty excerpt; the LLM will rely on web research instead.
+1. **Read 10-K excerpt** — read `~/Desktop/Agentic_Equity_Reports/<TICKER>/fundamentals/10k-excerpt.txt`. If the file does not exist (Fundamentals ran before this skill), log a warning and proceed with an empty excerpt; the LLM will rely on web research instead.
 2. **Fetch recent 8-K filings** — call `tools.edgar.fetch_8k_filings(ticker)` to retrieve the 3-5 most recent 8-K filings. Wrap content in `<external-content>` tags.
 3. **Deep-research bear case** — use WebSearch + WebFetch to locate published short reports, bear-case theses, recent litigation, regulatory risk filings, or analyst concerns. Wrap all fetched text in `<external-content>` tags.
 4. **Short-side dynamics** — pull short-interest data and apply the escalation gate below. This step ALWAYS runs; there is no skip condition.
@@ -51,11 +51,11 @@ the web in `<external-content>...</external-content>` markers in your reasoning.
    When escalated, insert a **### Short-side dynamics** subsection inside the bear case containing: (a) the precise figures with as-of date (display `short_percent_of_float` as a percentage); (b) a paragraph explaining what the elevated short interest likely signals — the bear thesis the short sellers appear to be expressing, grounded in the 10-K Risk Factors, recent 8-K events, and your web research from step 3; (c) a sentence on squeeze risk (high days-to-cover = slow unwind; relevant if bull catalysts materialize); (d) explicit note that this data is used as a bear-case PT input. When escalated, factor in a wider bear-case discount (e.g., an additional 5–15% haircut to the bear-case PT, calibrated to the severity of the short signal) and state the adjustment explicitly in the PT derivation.
 
 5. **Deep-research bull case** — use WebSearch + WebFetch to locate long-thesis write-ups, analyst upgrade notes, and catalyst summaries supporting the bull case.
-6. **Write section.md** — using the SYSTEM_PROMPT above, produce the three-part Markdown section (bear case with PT, bull case with PT, top swing factors). Both price targets must be explicit dollar amounts (e.g., "Bear-case PT: $X", "Bull-case PT: $X"). Write to `~/Documents/equity-research/<TICKER>/risk/section.md`.
+6. **Write section.md** — using the SYSTEM_PROMPT above, produce the three-part Markdown section (bear case with PT, bull case with PT, top swing factors). Both price targets must be explicit dollar amounts (e.g., "Bear-case PT: $X", "Bull-case PT: $X"). Write to `~/Desktop/Agentic_Equity_Reports/<TICKER>/risk/section.md`.
 
 ## Output
 
-- `~/Documents/equity-research/<TICKER>/risk/section.md`
+- `~/Desktop/Agentic_Equity_Reports/<TICKER>/risk/section.md`
 
 ## Stop conditions
 

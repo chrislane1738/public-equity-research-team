@@ -50,15 +50,15 @@ data.
 ## Tools You Will Use
 
 - **Skill tool** — dispatches `financial-analysis:dcf-model`
-- **Read** — reads `~/Documents/equity-research/<TICKER>/comps/peer-multiples.json`
+- **Read** — reads `~/Desktop/Agentic_Equity_Reports/<TICKER>/comps/peer-multiples.json`
 - **`tools.dcf_engine`** — helpers for narrative construction and sensitivity tables
 - **`MarketData`** — fetches current beta and 10Y UST rate
 
 ## Workflow
 
-1. **Read fundamentals' canonical data** — load `~/Documents/equity-research/<TICKER>/fundamentals/financials.json`. Use the `ttm.*`, `live_quote.*`, and `latest_quarter.*` fields as your base year — never re-pull from FMP and never use FMP's `key-metrics`/`ratios` fields. If fundamentals didn't produce `ttm.*` or `latest_quarter.*`, stop and flag — fundamentals must run first.
+1. **Read fundamentals' canonical data** — load `~/Desktop/Agentic_Equity_Reports/<TICKER>/fundamentals/financials.json`. Use the `ttm.*`, `live_quote.*`, and `latest_quarter.*` fields as your base year — never re-pull from FMP and never use FMP's `key-metrics`/`ratios` fields. If fundamentals didn't produce `ttm.*` or `latest_quarter.*`, stop and flag — fundamentals must run first.
 
-2. **Read peer multiples** — load `~/Documents/equity-research/<TICKER>/comps/peer-multiples.json` if it exists. Extract `peer_median_ev_ebitda` and `peer_p75_ev_ebitda`. Trust these values — the comps skill is contractually obligated to compute them manually from raw statements + live quote.
+2. **Read peer multiples** — load `~/Desktop/Agentic_Equity_Reports/<TICKER>/comps/peer-multiples.json` if it exists. Extract `peer_median_ev_ebitda` and `peer_p75_ev_ebitda`. Trust these values — the comps skill is contractually obligated to compute them manually from raw statements + live quote.
 
 3. **Fallback** — if the comps file is absent (earnings-update workflow where comps haven't run), set `exit_multiple = 12.0` and note in the narrative: *"Peer multiples unavailable — using 12× EV/EBITDA floor."*
 
@@ -82,7 +82,7 @@ data.
 
 8. **Dispatch off-the-shelf skill (optional)** — invoke `financial-analysis:dcf-model` via the Skill tool with:
    - ticker
-   - data directory: `~/Documents/equity-research/<TICKER>/`
+   - data directory: `~/Desktop/Agentic_Equity_Reports/<TICKER>/`
    - exit_multiple override (from step 4)
    - sector_cap = peer_p75_ev_ebitda (or None if fallback)
    - output paths: `dcf/dcf.xlsx`, `dcf/football-field.png`, `dcf/sensitivity.png`
@@ -103,4 +103,4 @@ data.
 | Sensitivity table | `<TICKER>/dcf/sensitivity.png` |
 | Narrative prose | `<TICKER>/dcf/section.md` |
 
-All paths are relative to `~/Documents/equity-research/`.
+All paths are relative to `~/Desktop/Agentic_Equity_Reports/`.
