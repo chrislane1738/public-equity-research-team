@@ -38,5 +38,5 @@ ANTHROPIC_API_KEY: str = os.environ.get("ANTHROPIC_API_KEY", "")  # optional, un
 
 RESEARCH_DIR: Path = Path(
     os.environ.get("RESEARCH_DIR", str(Path.home() / "Documents" / "equity-research"))
-)
+).expanduser()
 CACHE_DIR: Path = RESEARCH_DIR / "_cache"
