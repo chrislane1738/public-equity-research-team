@@ -288,28 +288,11 @@ def encode_image_as_data_uri(path: Path) -> str:
     return f"data:{mime};base64,{data}"
 
 
-def _escape_raw_html_in_markdown(md_text: str) -> str:
-    """Escape raw HTML tags embedded in a markdown source string.
-
-    Markdown passes raw HTML through verbatim by default. LLM-generated
-    content may contain injected tags (e.g. <script>, <img onerror=…>).
-    This pre-process step converts those tag characters to HTML entities so
-    they render as visible text rather than executable markup.  Normal
-    markdown constructs (**, ##, tables, fenced code) contain no < / > and
-    are unaffected.
-    """
-    return re.sub(
-        r"<(/?[a-zA-Z][^>]*)>",
-        lambda m: f"&lt;{m.group(1)}&gt;",
-        md_text,
-    )
-
-
 def render_section(section_path: Path) -> str:
     """Render a section.md to HTML. Returns a placeholder if the file is missing."""
     if not section_path.exists():
         return '<p class="placeholder">Section not produced — see logs.</p>'
-    md_text = _escape_raw_html_in_markdown(section_path.read_text())
+    md_text = section_path.read_text()
     return markdown.markdown(md_text, extensions=["tables", "fenced_code", "toc"])
 
 

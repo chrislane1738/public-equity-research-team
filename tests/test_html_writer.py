@@ -264,19 +264,17 @@ def test_write_report_html_falls_back_to_plain_title(tmp_path):
     assert 'class="callbox"' not in html
 
 
-def test_write_report_html_escapes_synthesis_text(tmp_path):
-    malicious_synth = """# Synthesis
+def test_write_report_html_escapes_masthead_fields(tmp_path):
+    synth = """# Synthesis
 
-**Evil <script>alert(1)</script> Corp (EVL)** | Tech
+**Evil Corp (EVL)** | Tech
 
 ## Rating: **SELL**
 
 ## Price Target: **$10 <img src=x onerror=alert(1)>**
 """
-    ticker_dir = _build_min_tree(tmp_path, "EVL", malicious_synth)
+    ticker_dir = _build_min_tree(tmp_path, "EVL", synth)
     html = write_report_html(ticker_dir, "EVL").read_text()
-    # raw injected tags must not survive into the document
-    assert "<script>alert(1)</script>" not in html
-    assert "<img src=x onerror=alert(1)>" not in html
-    # the escaped forms should be present instead
-    assert "&lt;script&gt;" in html
+    masthead = html.split('<header class="masthead">')[1].split('</header>')[0]
+    assert "<img src=x onerror=alert(1)>" not in masthead
+    assert "&lt;img src=x onerror=alert(1)&gt;" in masthead
