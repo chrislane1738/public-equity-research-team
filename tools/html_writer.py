@@ -70,8 +70,16 @@ _RE_RATING = re.compile(r"##\s*Rating:\s*\*\*([A-Za-z]+)\*\*")
 _RE_PT = re.compile(r"##\s*Price Target:\s*\*\*([^*]+?)\*\*")
 _RE_DATE = re.compile(r"Synthesis date:\s*(\d{4}-\d{2}-\d{2})")
 _RE_SPOT = re.compile(r"Reference price:\s*\*{0,2}\$?([\d,.]+)")
+_RE_FIRST_H1 = re.compile(r"<h1[^>]*>.*?</h1>", re.DOTALL)
 
 _RATING_CLASS = {"BUY": "buy", "HOLD": "hold", "SELL": "sell"}
+
+
+def _strip_first_h1(html: str) -> str:
+    """Remove the first <h1>…</h1> — each pod section.md repeats its own title
+    as an <h1>, which is redundant with the section heading the writer injects.
+    """
+    return _RE_FIRST_H1.sub("", html, count=1)
 
 
 def _extract_masthead(synthesis_md: str) -> dict:

@@ -9,6 +9,7 @@ from tools.html_writer import (
     render_section,
     write_report_html,
     _extract_masthead,
+    _strip_first_h1,
 )
 
 
@@ -127,3 +128,16 @@ def test_extract_masthead_buy_and_hold_classes():
     assert buy["rating_class"] == "buy"
     hold = _extract_masthead("## Rating: **Hold**\n\n## Price Target: **$150**\n")
     assert hold["rating_class"] == "hold"
+
+
+def test_strip_first_h1_removes_only_first():
+    html = "<h1 id='a'>Title</h1><p>x</p><h1>Second</h1>"
+    out = _strip_first_h1(html)
+    assert "Title" not in out
+    assert "<p>x</p>" in out
+    assert "Second" in out
+
+
+def test_strip_first_h1_noop_without_h1():
+    html = "<h2>Sub</h2><p>body</p>"
+    assert _strip_first_h1(html) == html
