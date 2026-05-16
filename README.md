@@ -8,21 +8,27 @@ Local-first multi-agent equity research workstation. Claude Code is the managing
 
 ## Usage
 
-1. Set up `.env` (copy `.env.example`):
+1. Install Python dependencies (Python 3.14; a virtualenv is recommended):
+   ```bash
+   python3 -m venv .venv && source .venv/bin/activate
+   pip install -r requirements.txt
+   ```
+
+2. Set up `.env` (copy `.env.example`):
    - `FMP_API_KEY` — Financial Modeling Prep ($20-50/mo)
    - `FRED_API_KEY` — Federal Reserve Economic Data (free)
    - `SEC_EDGAR_USER_AGENT` — `Your Name your.email@example.com` (SEC fair-use)
 
-2. From the repo root:
+3. From the repo root:
    ```bash
    claude
    ```
 
-3. Type a workflow command, e.g. `/deep-dive NVDA`, or just talk naturally:
+4. Type a workflow command, e.g. `/deep-dive NVDA`, or just talk naturally:
    "deep-dive on NVDA". Claude routes the request through the skill pipeline
    and lands artifacts under `~/Documents/equity-research/<TICKER>/`.
 
-4. Open `<TICKER>/report.html` in your browser. That's the canonical
+5. Open `<TICKER>/report.html` in your browser. That's the canonical
    deliverable. Companion `.docx`, `.pptx`, `.xlsx` sit alongside it.
 
 See `COMMANDS.md` for the full workflow reference.
