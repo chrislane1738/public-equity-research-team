@@ -71,6 +71,10 @@ _RE_PT = re.compile(r"##\s*Price Target:\s*\*\*([^*]+?)\*\*")
 _RE_DATE = re.compile(r"Synthesis date:\s*(\d{4}-\d{2}-\d{2})")
 _RE_SPOT = re.compile(r"Reference price:\s*\*{0,2}\$?([\d,.]+)")
 _RE_FIRST_H1 = re.compile(r"<h1[^>]*>.*?</h1>", re.DOTALL)
+_RE_HEADING_ID = re.compile(
+    r'<h([1-6])([^>]*)\sid="([^"]+)"([^>]*)>(.*?)</h\1>', re.DOTALL
+)
+_RE_TAGS = re.compile(r"<[^>]+>")
 
 _RATING_CLASS = {"BUY": "buy", "HOLD": "hold", "SELL": "sell"}
 
@@ -80,6 +84,27 @@ def _strip_first_h1(html: str) -> str:
     as an <h1>, which is redundant with the section heading the writer injects.
     """
     return _RE_FIRST_H1.sub("", html, count=1)
+
+
+def _prefix_heading_ids(html: str, pod: str) -> tuple[str, list[tuple[str, str]]]:
+    """Prefix every heading id with the pod name so ids are unique across the
+    whole document (the markdown `toc` extension only dedupes within one render
+    call, and each section.md is rendered separately).
+
+    Returns the rewritten HTML and a list of (id, text) for the <h2> headings,
+    which feed the quicklinks rail's subsection dropdown.
+    """
+    subsections: list[tuple[str, str]] = []
+
+    def repl(m: re.Match) -> str:
+        level, pre, hid, post, text = m.groups()
+        new_id = f"{pod}__{hid}"
+        if level == "2":
+            label = _RE_TAGS.sub("", text).strip()
+            subsections.append((new_id, label))
+        return f'<h{level}{pre} id="{new_id}"{post}>{text}</h{level}>'
+
+    return _RE_HEADING_ID.sub(repl, html), subsections
 
 
 def _extract_masthead(synthesis_md: str) -> dict:

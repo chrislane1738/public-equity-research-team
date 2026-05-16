@@ -10,6 +10,7 @@ from tools.html_writer import (
     write_report_html,
     _extract_masthead,
     _strip_first_h1,
+    _prefix_heading_ids,
 )
 
 
@@ -141,3 +142,35 @@ def test_strip_first_h1_removes_only_first():
 def test_strip_first_h1_noop_without_h1():
     html = "<h2>Sub</h2><p>body</p>"
     assert _strip_first_h1(html) == html
+
+
+def test_prefix_heading_ids_prefixes_and_collects_h2():
+    html = '<h2 id="balance-sheet">Balance Sheet</h2><p>x</p><h2 id="kpis">KPIs</h2>'
+    out, subs = _prefix_heading_ids(html, "fundamentals")
+    assert 'id="fundamentals__balance-sheet"' in out
+    assert 'id="fundamentals__kpis"' in out
+    assert subs == [
+        ("fundamentals__balance-sheet", "Balance Sheet"),
+        ("fundamentals__kpis", "KPIs"),
+    ]
+
+
+def test_prefix_heading_ids_unique_across_pods():
+    html = '<h2 id="data-gaps">Data Gaps</h2>'
+    out_a, _ = _prefix_heading_ids(html, "industry")
+    out_b, _ = _prefix_heading_ids(html, "macro")
+    assert 'id="industry__data-gaps"' in out_a
+    assert 'id="macro__data-gaps"' in out_b
+
+
+def test_prefix_heading_ids_strips_tags_from_label():
+    html = '<h2 id="x">Plain <em>and</em> fancy</h2>'
+    _, subs = _prefix_heading_ids(html, "dcf")
+    assert subs == [("dcf__x", "Plain and fancy")]
+
+
+def test_prefix_heading_ids_ignores_headings_without_id():
+    html = "<h2>No id here</h2>"
+    out, subs = _prefix_heading_ids(html, "risk")
+    assert out == html
+    assert subs == []
