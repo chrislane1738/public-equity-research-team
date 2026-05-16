@@ -124,6 +124,30 @@ def _wrap_figures(html: str) -> str:
     return _RE_IMG_PARA.sub(repl, html)
 
 
+def _build_rail(nav: list[tuple[str, str, list[tuple[str, str]]]]) -> str:
+    """Build the fixed left quicklinks rail.
+
+    nav: list of (section_id, section_label, subsections), where subsections is
+    a list of (subsection_id, subsection_label).
+    """
+    rows = ['<nav id="rail">', '<div class="rail-h">Contents</div>']
+    for sec_id, sec_label, subs in nav:
+        rows.append(f'<div class="nav-sec" data-sec="{sec_id}">')
+        rows.append('<div class="nav-row">')
+        rows.append(f'<a href="#{sec_id}">{sec_label}</a>')
+        if subs:
+            rows.append('<span class="chev">&#9654;</span>')
+        rows.append('</div>')
+        if subs:
+            rows.append('<div class="subnav">')
+            for sub_id, sub_label in subs:
+                rows.append(f'<a href="#{sub_id}">{sub_label}</a>')
+            rows.append('</div>')
+        rows.append('</div>')
+    rows.append('</nav>')
+    return "\n".join(rows)
+
+
 def _extract_masthead(synthesis_md: str) -> dict:
     """Parse masthead fields from _synthesis.md.
 

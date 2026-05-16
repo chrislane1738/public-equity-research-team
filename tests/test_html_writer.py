@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from tools.html_writer import (
+    _build_rail,
     encode_image_as_data_uri,
     render_section,
     write_report_html,
@@ -196,3 +197,20 @@ def test_wrap_figures_handles_img_without_alt():
     out = _wrap_figures(html)
     assert "<figure>" in out
     assert "<figcaption>" not in out
+
+
+def test_build_rail_emits_section_link_and_chevron():
+    nav = [("fundamentals", "Fundamentals", [("fundamentals__bs", "Balance Sheet")])]
+    rail = _build_rail(nav)
+    assert rail.startswith('<nav id="rail">')
+    assert 'data-sec="fundamentals"' in rail
+    assert 'href="#fundamentals"' in rail
+    assert 'href="#fundamentals__bs"' in rail
+    assert 'class="chev"' in rail
+
+
+def test_build_rail_no_chevron_without_subsections():
+    rail = _build_rail([("technicals", "Technicals", [])])
+    assert 'data-sec="technicals"' in rail
+    assert 'class="chev"' not in rail
+    assert 'class="subnav"' not in rail
