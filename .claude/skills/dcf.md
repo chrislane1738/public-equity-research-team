@@ -88,6 +88,10 @@ data.
    - output paths: `dcf/dcf.xlsx`, `dcf/football-field.png`, `dcf/sensitivity.png`
    - manually computed WACC inputs from step 5 (pass through — do not let the off-the-shelf skill recompute from FMP fields)
 
+   **Formula-driven workbook requirement (mandatory).** `dcf.xlsx` must be a live model, not a number dump — a reviewer must be able to change any assumption and watch it flow through. Only genuine *inputs* may be hardcoded: the assumption set (growth-path, EBIT-margin-path, tax rate, D&A/capex/ΔWC %s, terminal growth, exit multiple, blend weight), the WACC components (β, Rf, ERP, cost of debt, D/E weights), the TTM base-year financials, net cash, and share count. Every *derived* cell must be an Excel formula referencing those input cells — WACC itself, the FCF projection (revenue path, EBIT, NOPAT, D&A, capex, ΔWC, FCF), discount factors, per-year PVs, sum-of-PV, all three terminal methods (GGM, exit-multiple, blend), the EV→equity bridge, per-share value, and both sensitivity grids (which must reference their own axis cells). If the off-the-shelf skill emits static values, build the workbook directly with a formula-writing library (e.g. `openpyxl`) instead of pasting numbers.
+
+   **Unit consistency.** Use one unit convention per quantity and make formulas honor it — in particular, if share count is stored in millions, per-share formulas must divide by `shares × 1e6`. (A prior run shipped per-share cells 1000× off from a millions/raw mismatch.) After writing, verify the workbook recalculates and the per-share value ties — the `audit-xls` skill is the quickest check.
+
 9. **Write narrative** — apply PROSE_PROMPT (verbatim above) to generate `dcf/section.md`. Explicitly state: (a) the TTM base year and most recent quarter, (b) the manually computed WACC components, (c) whether the p75 cap triggered, (d) which fallback mode was used. Cite the source of every input.
 
 ## Output
