@@ -129,29 +129,17 @@ def football_field(scenarios: list[tuple[str, float, float]],
     ax.set_yticklabels(labels)
     ax.invert_yaxis()
 
-    # x-limits with margin; endpoint labels go outside the bar, but flip to
-    # inside (white) when an endpoint sits too close to an axis edge to fit.
+    # x-limits with generous margins so every endpoint label sits just outside
+    # its bar, within the plot area — clear of the axis edges and the y labels.
     span = float(highs.max() - lows.min()) or 1.0
-    xlo, xhi = lows.min() - span * 0.08, highs.max() + span * 0.08
-    ax.set_xlim(xlo, xhi)
-    edge = span * 0.14
+    ax.set_xlim(max(0.0, lows.min() - span * 0.16), highs.max() + span * 0.16)
     for yi, lo, hi in zip(y, lows, highs):
-        if lo - xlo < edge:  # near left edge — label inside the bar
-            ax.annotate(f"${lo:,.0f}", (lo, yi), xytext=(6, 0),
-                        textcoords="offset points", ha="left", va="center",
-                        fontsize=8, fontweight="bold", color="#ffffff")
-        else:
-            ax.annotate(f"${lo:,.0f}", (lo, yi), xytext=(-6, 0),
-                        textcoords="offset points", ha="right", va="center",
-                        fontsize=8, color=MUTED)
-        if xhi - hi < edge:  # near right edge — label inside the bar
-            ax.annotate(f"${hi:,.0f}", (hi, yi), xytext=(-6, 0),
-                        textcoords="offset points", ha="right", va="center",
-                        fontsize=8, fontweight="bold", color="#ffffff")
-        else:
-            ax.annotate(f"${hi:,.0f}", (hi, yi), xytext=(6, 0),
-                        textcoords="offset points", ha="left", va="center",
-                        fontsize=8, color=MUTED)
+        ax.annotate(f"${lo:,.0f}", (lo, yi), xytext=(-6, 0),
+                    textcoords="offset points", ha="right", va="center",
+                    fontsize=8, color=MUTED)
+        ax.annotate(f"${hi:,.0f}", (hi, yi), xytext=(6, 0),
+                    textcoords="offset points", ha="left", va="center",
+                    fontsize=8, color=MUTED)
     ax.axvline(current_price, color=GOLD, linestyle="--", linewidth=1.5)
     ax.annotate(f"Current  ${current_price:,.0f}",
                 xy=(current_price, 1), xycoords=("data", "axes fraction"),
@@ -193,21 +181,21 @@ def sensitivity_heatmap(grid: dict[tuple[float, float], float],
 
 def catalyst_timeline(events: list[tuple[str, str]], path: Path) -> None:
     """Plot date-labeled catalysts as points on a horizontal time axis."""
-    fig, ax = plt.subplots(figsize=(10, 3.6))
+    fig, ax = plt.subplots(figsize=(10, 3.4))
     dates = [datetime.strptime(d, "%Y-%m-%d") for d, _ in events]
     labels = [lbl for _, lbl in events]
     ax.axhline(1, color=RULE, linewidth=1.2, zorder=1)
     ax.scatter(dates, [1] * len(dates), s=70, color=NAVY, zorder=3)
-    # alternate label height so adjacent (possibly close-dated) labels never collide
-    for i, (d, lbl) in enumerate(zip(dates, labels)):
-        tier = 1.40 if i % 2 else 1.18
-        ax.plot([d, d], [1, tier], color=RULE, linewidth=0.8, zorder=2)
-        ax.annotate(lbl, (d, tier + 0.02), ha="center", va="bottom",
-                    fontsize=8, color=INK)
-        ax.annotate(d.strftime("%b %d"), (d, 0.86), ha="center", va="top",
+    # labels angled up-right off each point — stays legible even when events
+    # cluster tightly, where a horizontal or two-tier layout would collide
+    for d, lbl in zip(dates, labels):
+        ax.plot([d, d], [1, 1.12], color=RULE, linewidth=0.8, zorder=2)
+        ax.annotate(lbl, (d, 1.14), rotation=38, rotation_mode="anchor",
+                    ha="left", va="bottom", fontsize=8, color=INK)
+        ax.annotate(d.strftime("%b %d"), (d, 0.88), ha="center", va="top",
                     fontsize=7.5, color=MUTED)
-    ax.set_ylim(0.55, 1.78)
-    ax.margins(x=0.08)
+    ax.set_ylim(0.6, 2.1)
+    ax.margins(x=0.10)
     ax.set_yticks([])
     ax.set_xticks([])
     for side in ("top", "right", "left", "bottom"):
