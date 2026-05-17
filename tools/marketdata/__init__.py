@@ -38,7 +38,10 @@ class MarketData:
     def get_profile(self, ticker: str) -> Profile:
         from tools.marketdata.fmp import normalize_profile
         if self.fmp is not None:
-            raw = asyncio.run(self.fmp.get_profile(ticker))
+            try:
+                raw = asyncio.run(self.fmp.get_profile(ticker))
+            except Exception:
+                raw = None  # FMP error — fall through to yfinance
             # Mocks may already return TypedDict shape; raw FMP responses need normalization.
             result = raw if isinstance(raw, dict) and "company_name" in raw else normalize_profile(raw)
             if result:
@@ -50,7 +53,10 @@ class MarketData:
     def get_quote(self, ticker: str) -> Quote:
         from tools.marketdata.fmp import normalize_quote
         if self.fmp is not None:
-            raw = asyncio.run(self.fmp.get_quote(ticker))
+            try:
+                raw = asyncio.run(self.fmp.get_quote(ticker))
+            except Exception:
+                raw = None  # FMP error, or empty quote (FmpClient.get_quote raises) — fall through to yfinance
             result = raw if isinstance(raw, dict) and "fifty_two_week_high" in raw else normalize_quote(raw)
             if result:
                 return result
@@ -62,7 +68,10 @@ class MarketData:
         from tools.marketdata.fmp import normalize_historical
         if self.fmp is not None:
             days = _PERIOD_TO_DAYS.get(period, 365)
-            raw = asyncio.run(self.fmp.get_historical_prices(ticker, days=days))
+            try:
+                raw = asyncio.run(self.fmp.get_historical_prices(ticker, days=days))
+            except Exception:
+                raw = None  # FMP error (auth, rate-limit, network) — fall through to yfinance
             result = normalize_historical(raw)
             if result:
                 return result

@@ -95,6 +95,48 @@ def test_market_data_uses_fmp_when_available():
     yf.get_profile.assert_not_called()
 
 
+def test_market_data_falls_back_to_yfinance_when_fmp_profile_raises():
+    fmp = AsyncMock()
+    fmp.get_profile.side_effect = RuntimeError("FMP 401")
+    yf = MagicMock()
+    yf.get_profile.return_value = {"symbol": "NVDA", "company_name": "NVIDIA (yf)"}
+
+    md = MarketData(fmp_client=fmp, yfinance_client=yf)
+    profile = md.get_profile("NVDA")
+
+    assert profile["company_name"] == "NVIDIA (yf)"
+    yf.get_profile.assert_called_once_with("NVDA")
+
+
+def test_market_data_falls_back_to_yfinance_when_fmp_quote_raises():
+    fmp = AsyncMock()
+    fmp.get_quote.side_effect = RuntimeError("FMP quote empty")
+    yf = MagicMock()
+    yf.get_quote.return_value = {"symbol": "NVDA", "price": 100.0,
+                                 "fifty_two_week_high": 150.0}
+
+    md = MarketData(fmp_client=fmp, yfinance_client=yf)
+    quote = md.get_quote("NVDA")
+
+    assert quote["price"] == 100.0
+    yf.get_quote.assert_called_once_with("NVDA")
+
+
+def test_market_data_falls_back_to_yfinance_when_fmp_historical_raises():
+    fmp = AsyncMock()
+    fmp.get_historical_prices.side_effect = RuntimeError("FMP rate-limited")
+    yf = MagicMock()
+    yf.get_historical_prices.return_value = [
+        {"date": "2026-05-15", "open": 1, "high": 2, "low": 1, "close": 2, "volume": 100}
+    ]
+
+    md = MarketData(fmp_client=fmp, yfinance_client=yf)
+    bars = md.get_historical_prices("NVDA", period="1y")
+
+    assert len(bars) == 1 and bars[0]["close"] == 2
+    yf.get_historical_prices.assert_called_once_with("NVDA", period="1y")
+
+
 # ---------------------------------------------------------------------------
 # Short interest
 # ---------------------------------------------------------------------------
