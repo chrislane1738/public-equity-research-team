@@ -11,6 +11,10 @@ from tools.charts import (
     catalyst_timeline,
     price_chart,
     growth_panel,
+    vwap_chart,
+    volume_profile_chart,
+    macd_chart,
+    bollinger_chart,
 )
 
 
@@ -132,3 +136,52 @@ def test_price_chart_handles_newest_first_or_oldest_first(tmp_path):
     assert a.exists() and b.exists()
     # Allow ~5% size variance for title-text differences only.
     assert abs(a.stat().st_size - b.stat().st_size) < a.stat().st_size * 0.10
+
+
+# --- technicals indicator charts ---
+
+_DATES = [f"2026-{(m):02d}-{(d):02d}" for m in (1, 2, 3) for d in range(1, 21)]
+_CLOSES = [100 + i * 0.4 for i in range(len(_DATES))]
+
+
+def test_vwap_chart_writes_png(tmp_path):
+    out = tmp_path / "vwap.png"
+    n = len(_DATES)
+    vwaps = [
+        {"name": "Rolling VWAP (50d)", "values": [None] * 10 + _CLOSES[10:]},
+        {"name": "Anchored VWAP (52w low)", "values": [None] * 5 + _CLOSES[5:]},
+    ]
+    vwap_chart(_DATES, _CLOSES, vwaps, path=out, title="NVDA")
+    assert out.exists() and out.stat().st_size > 1000
+
+
+def test_volume_profile_chart_writes_png(tmp_path):
+    out = tmp_path / "vp.png"
+    buckets = [
+        {"low": 90 + b, "high": 91 + b, "mid": 90.5 + b, "volume": 1e6 * (b + 1)}
+        for b in range(12)
+    ]
+    volume_profile_chart(buckets, current_price=98.0, path=out)
+    assert out.exists() and out.stat().st_size > 1000
+
+
+def test_macd_chart_writes_png(tmp_path):
+    out = tmp_path / "macd.png"
+    n = len(_DATES)
+    macd_line = [None] * 26 + [0.3 * ((-1) ** i) for i in range(n - 26)]
+    signal_line = [None] * 34 + [0.1 * ((-1) ** i) for i in range(n - 34)]
+    histogram = [
+        (m - s) if (m is not None and s is not None) else None
+        for m, s in zip(macd_line, signal_line)
+    ]
+    macd_chart(_DATES, macd_line, signal_line, histogram, path=out)
+    assert out.exists() and out.stat().st_size > 1000
+
+
+def test_bollinger_chart_writes_png(tmp_path):
+    out = tmp_path / "boll.png"
+    mid = [None] * 19 + [c for c in _CLOSES[19:]]
+    upper = [None if m is None else m + 5 for m in mid]
+    lower = [None if m is None else m - 5 for m in mid]
+    bollinger_chart(_DATES, _CLOSES, upper, mid, lower, path=out)
+    assert out.exists() and out.stat().st_size > 1000

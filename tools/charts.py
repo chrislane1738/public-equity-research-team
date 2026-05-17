@@ -72,6 +72,24 @@ def _fig_save(fig, path: Path) -> None:
     plt.close(fig)
 
 
+def _compact_num(v: float, _pos=None) -> str:
+    """Axis tick formatter for large counts — 1.2B / 340M / 5K."""
+    av = abs(v)
+    if av >= 1e9:
+        return f"{v / 1e9:.1f}B"
+    if av >= 1e6:
+        return f"{v / 1e6:.0f}M"
+    if av >= 1e3:
+        return f"{v / 1e3:.0f}K"
+    return f"{v:.0f}"
+
+
+def _nan_series(values: list) -> "np.ndarray":
+    """Convert a list that may contain None into a float array (None → NaN) so
+    matplotlib renders clean gaps where an indicator is not yet defined."""
+    return np.array([v if v is not None else np.nan for v in values], dtype=float)
+
+
 def peer_share_chart(peers: list[dict], path: Path, title: str = "Peer share") -> None:
     """Vertical bar chart of each peer's market share. `share` is a fraction (0-1)."""
     fig, ax = plt.subplots(figsize=(8, 4.5))
@@ -352,4 +370,96 @@ def growth_panel(metrics: list[dict], path: Path,
                 label.set_rotation(45)
                 label.set_horizontalalignment("right")
 
+    _fig_save(fig, path)
+
+
+# --- technicals indicator charts ---
+# Each renders one indicator to its own PNG, so a section can show only the
+# charts that are significant enough to discuss rather than one cluttered plot.
+# `dates` are ISO "YYYY-MM-DD" strings, oldest-first; all series are parallel
+# lists aligned to `dates` (leading None where the indicator is undefined).
+
+
+def vwap_chart(dates: list[str], closes: list[float], vwaps: list[dict],
+               path: Path, title: str = "") -> None:
+    """Close price with one or more VWAP overlays (rolling and/or anchored).
+
+    Each `vwaps` entry is `{"name": str, "values": [float | None, ...]}`.
+    """
+    fig, ax = plt.subplots(figsize=(10, 5))
+    x = [datetime.strptime(d, "%Y-%m-%d") for d in dates]
+    ax.plot(x, closes, color=NAVY, linewidth=1.7, label="Close")
+    for vw, color in zip(vwaps, (_SMA_COLORS * 4)):
+        ax.plot(x, _nan_series(vw["values"]), color=color, linewidth=1.3,
+                label=vw["name"])
+    ax.set_ylabel("Share price (US$)")
+    ax.set_xlabel("Date")
+    ax.yaxis.set_major_formatter("${x:,.0f}")
+    ax.legend(loc="best", frameon=False, fontsize=9)
+    _style_axes(ax)
+    _fig_save(fig, path)
+
+
+def volume_profile_chart(buckets: list[dict], current_price: float,
+                         path: Path, title: str = "") -> None:
+    """Horizontal volume-by-price histogram — y is price, x is volume traded.
+
+    The highest-volume bar (the strongest support/resistance node) is gold; the
+    dashed gold line marks the current price. `buckets` is `volume_by_price()`
+    output.
+    """
+    fig, ax = plt.subplots(figsize=(7, 6))
+    mids = [b["mid"] for b in buckets]
+    vols = [b["volume"] for b in buckets]
+    height = (buckets[0]["high"] - buckets[0]["low"]) * 0.92 if buckets else 1.0
+    vmax = max(vols) if vols else 0.0
+    colors = [GOLD if v == vmax else NAVY for v in vols]
+    ax.barh(mids, vols, height=height, color=colors)
+    ax.axhline(current_price, color=GOLD, linestyle="--", linewidth=1.5)
+    ax.annotate(f"Current  ${current_price:,.0f}",
+                xy=(1, current_price), xycoords=("axes fraction", "data"),
+                xytext=(-6, 5), textcoords="offset points",
+                ha="right", va="bottom", fontsize=9, fontweight="bold", color=GOLD)
+    ax.set_xlabel("Volume traded")
+    ax.set_ylabel("Price (US$)")
+    ax.yaxis.set_major_formatter("${x:,.0f}")
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(_compact_num))
+    _style_axes(ax, grid_axis="x")
+    _fig_save(fig, path)
+
+
+def macd_chart(dates: list[str], macd_line: list, signal_line: list,
+               histogram: list, path: Path, title: str = "") -> None:
+    """MACD panel — histogram bars (gold positive / slate negative) plus the
+    MACD and signal lines."""
+    fig, ax = plt.subplots(figsize=(10, 3.8))
+    x = [datetime.strptime(d, "%Y-%m-%d") for d in dates]
+    bar_colors = [GOLD if (h is not None and h >= 0) else SLATE for h in histogram]
+    ax.bar(x, _nan_series(histogram), color=bar_colors, width=1.0)
+    ax.plot(x, _nan_series(macd_line), color=NAVY, linewidth=1.4, label="MACD")
+    ax.plot(x, _nan_series(signal_line), color=GOLD, linewidth=1.2, label="Signal")
+    ax.axhline(0, color=RULE, linewidth=0.8)
+    ax.set_ylabel("MACD")
+    ax.set_xlabel("Date")
+    ax.legend(loc="best", frameon=False, fontsize=9)
+    _style_axes(ax)
+    _fig_save(fig, path)
+
+
+def bollinger_chart(dates: list[str], closes: list[float], upper: list,
+                    mid: list, lower: list, path: Path, title: str = "") -> None:
+    """Close price with Bollinger Bands; the band area is lightly shaded."""
+    fig, ax = plt.subplots(figsize=(10, 5))
+    x = [datetime.strptime(d, "%Y-%m-%d") for d in dates]
+    up, md, lo = _nan_series(upper), _nan_series(mid), _nan_series(lower)
+    ax.fill_between(x, lo, up, color=MIST, alpha=0.22, linewidth=0)
+    ax.plot(x, closes, color=NAVY, linewidth=1.7, label="Close")
+    ax.plot(x, md, color=GOLD, linewidth=1.1, label="SMA 20")
+    ax.plot(x, up, color=SLATE, linewidth=0.9, label="Upper / lower (2σ)")
+    ax.plot(x, lo, color=SLATE, linewidth=0.9)
+    ax.set_ylabel("Share price (US$)")
+    ax.set_xlabel("Date")
+    ax.yaxis.set_major_formatter("${x:,.0f}")
+    ax.legend(loc="best", frameon=False, fontsize=9)
+    _style_axes(ax)
     _fig_save(fig, path)
