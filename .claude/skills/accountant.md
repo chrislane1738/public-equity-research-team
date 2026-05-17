@@ -62,9 +62,9 @@ accountant's wall-clock and token cost.
 |---|---|---|
 | 1. CIK lookup | Full | Full (no change) |
 | 2. List filings | Pull 10-K, 10-Q×2, 8-K×5, DEF 14A | Pull most recent 8-K only (latest earnings release) |
-| 3. XBRL pull | Most recent FY + most recent Q | **Most recent Q only** (skip annual XBRL pull) |
-| 4. FMP comparison | 3 annual + 4 quarterly | **1 quarterly only** (latest period) |
-| 5. Reconciliation | Both periods | **Latest Q only** |
+| 3. XBRL pull | Most recent FY + 3 most recent 10-Qs | **Most recent Q only** (skip annual XBRL pull) |
+| 4. FMP comparison | 3 annual + 6 quarterly | **1 quarterly only** (latest period) |
+| 5. Reconciliation | FY + 3 most recent 10-Qs (the TTM-base periods) | **Latest Q only** |
 | 6. Download filings | All identified in Step 2 | **Latest 8-K + earnings deck only** |
 | 7. Earnings presentation | Full IR-page search | Full (no change — this is the highest-value artifact in earnings mode) |
 | 8. 10-K section extracts | risk_factors / mda / financial_statements / legal_proceedings | **Skip entirely** (no 10-K download in earnings mode) |
@@ -107,15 +107,15 @@ log a `CRITICAL DATA GAP — 10-K stale (>18 months)` warning at the top of
 
 ### Step 3 — Pull XBRL company facts
 
-**Reconciliation scope:** ONLY the most recent fiscal-year 10-K period and the most recent 10-Q period. Do not reconcile every historical quarter — the accountant's job is to validate the two most-recent reports against FMP, not audit the full history.
+**Reconciliation scope:** the most recent fiscal-year 10-K period and the **three most recent 10-Q periods** — every period that carries a discrete SEC filing and feeds the downstream TTM base year. (TTM spans four quarters, but only three are 10-Qs; the fourth is a fiscal-Q4 reported inside the 10-K, with no standalone quarterly filing to reconcile — it is covered via the reconciled annual.) Do not reconcile beyond this — older history is the fundamentals/comps agents' job, and reconciling it adds cost without touching any model.
 
 Call `get_company_facts(cik)`. The response contains a nested dict keyed by
 taxonomy (`us-gaap`) then by concept name. For each concept below, extract:
 
 1. **The most recent annual value** (`form: "10-K"`, `fp: "FY"`) — period end matches the most recent 10-K identified in Step 2.
-2. **The most recent quarterly value** (`form: "10-Q"`) — period end matches the most recent 10-Q identified in Step 2.
+2. **The three most recent quarterly values** (`form: "10-Q"`) — period ends match the three most recent 10-Qs identified in Step 2.
 
-For each, capture: `value`, `end` (period end date), `accn` (accession number), `form`, `filed` date. **Note: only these two periods per concept — do not pull historical quarters here.** (Historical context is the fundamentals/comps agents' job.)
+For each, capture: `value`, `end` (period end date), `accn` (accession number), `form`, `filed` date. **Note: only these four periods per concept — one annual plus the three most recent quarters — do not pull older history here.** (Older historical context is the fundamentals/comps agents' job.)
 
 **Target GAAP concepts:**
 
@@ -150,16 +150,16 @@ entry with the latest `filed` date (amended filings take precedence).
 Using `FmpClient._get(endpoint, ticker, params)` via asyncio, fetch:
 
 **Quarterly:**
-- `income-statement-quarterly` — `{'limit': 4}`
-- `balance-sheet-statement-quarterly` — `{'limit': 4}`
-- `cash-flow-statement-quarterly` — `{'limit': 4}`
+- `income-statement-quarterly` — `{'limit': 6}`
+- `balance-sheet-statement-quarterly` — `{'limit': 6}`
+- `cash-flow-statement-quarterly` — `{'limit': 6}`
 
 **Annual:**
 - `income-statement` — `{'limit': 3}`
 - `balance-sheet-statement` — `{'limit': 3}`
 - `cash-flow-statement` — `{'limit': 3}`
 
-The reconciliation in Step 5 uses only the most recent quarterly and most recent annual values. The extra periods exist for the red-flag audit's YoY/trend checks (RF-03 DSO, RF-04 DIO, RF-05 DPO, RF-11 SBC, RF-13 ETR).
+The reconciliation in Step 5 uses the most recent annual and the three most recent quarterly values. The extra periods exist for the red-flag audit's YoY/trend checks (RF-03 DSO, RF-04 DIO, RF-05 DPO, RF-11 SBC, RF-13 ETR).
 
 Map FMP field names to SEC GAAP concepts as follows (representative mappings;
 adjust if FMP column names differ):
@@ -188,9 +188,9 @@ adjust if FMP column names differ):
 **Do NOT use FMP's `key-metrics` or `ratios` endpoints** — those snapshot at
 fiscal period-end and silently go stale. Use raw 3-statement endpoints only.
 
-### Step 5 — Reconcile SEC vs FMP (scoped to most recent FY + most recent Q)
+### Step 5 — Reconcile SEC vs FMP (scoped to most recent FY + 3 most recent 10-Qs)
 
-Reconciliation is scoped to **two periods only**: the most recent FY 10-K period and the most recent 10-Q period. For each GAAP concept pulled in Step 3, match each of those two SEC values with its corresponding FMP value (matched on `period_end` date ± 7 days, with the FMP period selected from the matching annual or quarterly statement). Compute:
+Reconciliation is scoped to **four periods**: the most recent FY 10-K period and the three most recent 10-Q periods — the most recent annual plus every quarter of the downstream TTM base year that has a discrete SEC filing. For each GAAP concept pulled in Step 3, match each of those four SEC values with its corresponding FMP value (matched on `period_end` date ± 7 days, with the FMP period selected from the matching annual or quarterly statement). Compute:
 
 ```
 delta_pct = abs(sec_value - fmp_value) / abs(sec_value) * 100
