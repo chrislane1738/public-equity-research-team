@@ -1,6 +1,6 @@
 ---
 name: comps
-description: Use during deep-dive or sector workflows — given a user-supplied peer ticker list, computes multiples manually from raw FMP 3-statement data plus live quote (NO FMP key-metrics/ratios, NO FMP-curated or LLM-picked peers), and writes peer-multiples.json (consumed by dcf), box-plot.png, comps.xlsx, and section.md.
+description: Use during deep-dive or sector workflows — given a user-supplied peer ticker list, computes multiples manually from raw FMP 3-statement data plus live quote (NO FMP key-metrics/ratios, NO FMP-curated or LLM-picked peers), and writes peer-multiples.json (consumed by dcf), box-plot.png, a ticker-prefixed `<TICKER> comps.xlsx`, and section.md.
 ---
 
 # Comps — Comparable Company Analysis
@@ -68,14 +68,14 @@ Then compute manually:
 
 ### Step 3 — Dispatch off-the-shelf for Excel
 
-Once you have the manually computed multiples, dispatch `financial-analysis:comps-analysis` via the Skill tool to generate the Excel output (`comps/comps.xlsx`). Pass it your computed multiples — do NOT let it re-compute from FMP fields.
+Once you have the manually computed multiples, dispatch `financial-analysis:comps-analysis` via the Skill tool to generate the Excel output (`comps/<TICKER> comps.xlsx` — ticker-prefixed, e.g. `ADBE comps.xlsx`, so it stays uniquely identifiable when downloaded). Pass it your computed multiples — do NOT let it re-compute from FMP fields.
 
-**Formula-driven workbook requirement (mandatory).** `comps.xlsx` must be a live model, not a number dump — a reviewer must be able to change a peer's raw input and watch the multiples and statistics recompute. The raw line items are legitimate hardcoded *inputs*: each peer's price, market cap, EV, TTM revenue, TTM EBITDA, the P/E inputs, margins, and growth. But every *derived* cell must be an Excel formula:
+**Formula-driven workbook requirement (mandatory).** `<TICKER> comps.xlsx` must be a live model, not a number dump — a reviewer must be able to change a peer's raw input and watch the multiples and statistics recompute. The raw line items are legitimate hardcoded *inputs*: each peer's price, market cap, EV, TTM revenue, TTM EBITDA, the P/E inputs, margins, and growth. But every *derived* cell must be an Excel formula:
 - each peer's (and the target's) `ev_ebitda` and `ev_revenue` as formulas over that row's EV / EBITDA / revenue cells;
 - the peer-statistic rows (median, 75th percentile, min, max) as `MEDIAN` / `PERCENTILE` / `MIN` / `MAX` formulas over the peer cells (the P/E statistic must skip `n/a` text cells);
 - the target-vs-median premium/discount cells as formulas referencing the statistic cells.
 
-If the off-the-shelf skill emits static values, build the workbook directly with a formula-writing library (e.g. `openpyxl`) instead of pasting numbers. Do NOT write a 0-byte placeholder — a formula-driven `comps.xlsx` is required. After writing, verify the workbook recalculates — the `audit-xls` skill is the quickest check.
+If the off-the-shelf skill emits static values, build the workbook directly with a formula-writing library (e.g. `openpyxl`) instead of pasting numbers. Do NOT write a 0-byte placeholder — a formula-driven `<TICKER> comps.xlsx` is required. After writing, verify the workbook recalculates — the `audit-xls` skill is the quickest check.
 
 ### Step 4 — Write peer-multiples.json (DCF reads this)
 
@@ -117,7 +117,7 @@ Apply the SYSTEM_PROMPT (verbatim above) to produce `comps/section.md`, covering
 
 | Artifact | Path |
 |----------|------|
-| Excel comps table | `<TICKER>/comps/comps.xlsx` |
+| Excel comps table | `<TICKER>/comps/<TICKER> comps.xlsx` |
 | Peer multiples JSON | `<TICKER>/comps/peer-multiples.json` |
 | Box-plot chart | `<TICKER>/comps/box-plot.png` |
 | Narrative prose | `<TICKER>/comps/section.md` |

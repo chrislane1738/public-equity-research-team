@@ -11,6 +11,7 @@ import base64
 import re
 from html import escape as _escape
 from pathlib import Path
+from urllib.parse import quote as _urlquote
 
 import markdown
 
@@ -27,12 +28,15 @@ SECTION_ORDER = [
 ]
 
 
+# Path templates — `{ticker}` is substituted at render time. The Excel models
+# are ticker-prefixed (e.g. "ADBE dcf.xlsx") so they stay uniquely named when
+# a user downloads several tickers' models into one folder.
 COMPANION_LINKS = [
     ("reports/memo.docx", "Memo (.docx)"),
     ("reports/pitch.pptx", "Pitch Deck (.pptx)"),
     ("reports/onepager.pdf", "One-Pager (.pdf)"),
-    ("dcf/dcf.xlsx", "DCF Model (.xlsx)"),
-    ("comps/comps.xlsx", "Comps Model (.xlsx)"),
+    ("dcf/{ticker} dcf.xlsx", "DCF Model (.xlsx)"),
+    ("comps/{ticker} comps.xlsx", "Comps Model (.xlsx)"),
 ]
 
 
@@ -385,14 +389,17 @@ def write_report_html(ticker_dir: Path, ticker: str) -> Path:
         )
 
     # companion links (only those present)
-    companion_present = [
-        (rel, label) for rel, label in COMPANION_LINKS if (ticker_dir / rel).exists()
-    ]
+    companion_present = []
+    for rel_template, label in COMPANION_LINKS:
+        rel = rel_template.format(ticker=ticker)
+        if (ticker_dir / rel).exists():
+            companion_present.append((rel, label))
     if companion_present:
         parts.append('<div class="companion"><strong>Companion artifacts</strong> ')
         parts.append(
             " · ".join(
-                f'<a href="{rel}">{label}</a>' for rel, label in companion_present
+                f'<a href="{_urlquote(rel)}">{_escape(label)}</a>'
+                for rel, label in companion_present
             )
         )
         parts.append("</div>")
