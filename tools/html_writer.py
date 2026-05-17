@@ -32,9 +32,9 @@ SECTION_ORDER = [
 # are ticker-prefixed (e.g. "ADBE dcf.xlsx") so they stay uniquely named when
 # a user downloads several tickers' models into one folder.
 COMPANION_LINKS = [
-    ("reports/memo.docx", "Memo (.docx)"),
-    ("reports/pitch.pptx", "Pitch Deck (.pptx)"),
-    ("reports/onepager.pdf", "One-Pager (.pdf)"),
+    ("reports/{ticker} memo.docx", "Memo (.docx)"),
+    ("reports/{ticker} pitch.pptx", "Pitch Deck (.pptx)"),
+    ("reports/{ticker} onepager.pdf", "One-Pager (.pdf)"),
     ("dcf/{ticker} dcf.xlsx", "DCF Model (.xlsx)"),
     ("comps/{ticker} comps.xlsx", "Comps Model (.xlsx)"),
 ]

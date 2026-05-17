@@ -1,6 +1,6 @@
 ---
 name: memo-builder
-description: Use during deep-dive, earnings-update, or thesis-check workflows — produces reports/memo.docx by consuming every <TICKER>/<pod>/section.md and synthesis/_synthesis.md. Routes between two prompt modes: earnings-update uses the off-the-shelf equity-research:earnings-analysis citation discipline; deep-dive uses Plan B's longer-form memo prompt.
+description: Use during deep-dive, earnings-update, or thesis-check workflows — produces a ticker-prefixed reports/<TICKER> memo.docx by consuming every <TICKER>/<pod>/section.md and synthesis/_synthesis.md. Routes between two prompt modes: earnings-update uses the off-the-shelf equity-research:earnings-analysis citation discipline; deep-dive uses Plan B's longer-form memo prompt.
 ---
 
 # Memo Builder — Institutional Research Memo
@@ -60,7 +60,7 @@ markdown only, no preamble.
 
 - **Skill tool** — dispatches `equity-research:earnings-analysis` (earnings mode only)
 - **Read** — reads each `<pod>/section.md` and `synthesis/_synthesis.md`
-- **Write / Edit** — writes `reports/memo.docx` via python-docx (or off-the-shelf tool)
+- **Write / Edit** — writes `reports/<TICKER> memo.docx` (ticker-prefixed, e.g. `ADBE memo.docx`, so it stays uniquely identifiable when downloaded) via python-docx (or off-the-shelf tool)
 
 ## Workflow
 
@@ -79,7 +79,7 @@ Dispatch `equity-research:earnings-analysis` via the Skill tool. Pass:
 - If `accountant/section.md` exists, include it as supplemental context and reference any earnings-deck KPIs extracted by the accountant's lightweight earnings variant.
 
 The off-the-shelf skill handles citation discipline and earnings-note formatting.
-Output is written to `reports/memo.docx`.
+Output is written to `reports/<TICKER> memo.docx`.
 
 ### Step 2b — Deep-Dive / Thesis Mode (custom prompt)
 
@@ -98,13 +98,13 @@ Output is written to `reports/memo.docx`.
    - `risk-upside/section.md`
    - `technicals/section.md`
 4. Apply the substituted SYSTEM_PROMPT_TEMPLATE with the gathered inputs.
-5. Write the resulting markdown to a temp file, then convert to `reports/memo.docx`
+5. Write the resulting markdown to a temp file, then convert to `reports/<TICKER> memo.docx`
    via `tools.docx_writer.write_memo_docx(...)`.
 
 ## Output
 
 | Artifact | Path |
 |----------|------|
-| Initiation memo | `<TICKER>/reports/memo.docx` |
+| Initiation memo | `<TICKER>/reports/<TICKER> memo.docx` |
 
 All paths are relative to `~/Desktop/Agentic_Equity_Reports/`.

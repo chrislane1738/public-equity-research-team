@@ -56,8 +56,8 @@ def test_write_report_html_assembles_self_contained_file(tmp_path):
         (ticker_dir / pod / "section.md").write_text(f"# {pod}\n\nContent for {pod}.\n")
     (ticker_dir / "synthesis" / "_synthesis.md").write_text("# Synthesis\n\nRating: Buy. PT $200.\n")
     (ticker_dir / "reports").mkdir()
-    (ticker_dir / "reports" / "memo.docx").write_bytes(b"")
-    (ticker_dir / "reports" / "pitch.pptx").write_bytes(b"")
+    (ticker_dir / "reports" / "NVDA memo.docx").write_bytes(b"")
+    (ticker_dir / "reports" / "NVDA pitch.pptx").write_bytes(b"")
 
     out = write_report_html(ticker_dir, ticker="NVDA")
 
@@ -66,8 +66,9 @@ def test_write_report_html_assembles_self_contained_file(tmp_path):
     assert "<html" in html
     assert "<style>" in html  # inline CSS
     assert "@media print" in html
-    assert 'href="reports/memo.docx"' in html
-    assert 'href="reports/pitch.pptx"' in html
+    # companion models are ticker-prefixed; the href is URL-encoded
+    assert 'href="reports/NVDA%20memo.docx"' in html
+    assert 'href="reports/NVDA%20pitch.pptx"' in html
     assert "Rating: Buy" in html  # synthesis included
     assert "Content for fundamentals" in html
 
@@ -99,8 +100,8 @@ def test_write_report_html_skips_missing_companion_links(tmp_path):
 
     out = write_report_html(ticker_dir, ticker="NVDA")
     html = out.read_text()
-    assert 'href="reports/memo.docx"' not in html
-    assert 'href="reports/pitch.pptx"' not in html
+    assert 'href="reports/NVDA%20memo.docx"' not in html
+    assert 'href="reports/NVDA%20pitch.pptx"' not in html
 
 
 REAL_SYNTH = """# MU — Managing Director Synthesis
