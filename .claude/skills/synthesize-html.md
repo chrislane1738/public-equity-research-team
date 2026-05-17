@@ -25,6 +25,7 @@ This skill loads in-context. Do not dispatch as a subagent.
 - Deterministic — no LLM call. Judgment is just whether to invoke at all (e.g., halt if synthesis is missing).
 - Companion .docx / .pptx / .xlsx are linked via relative paths. Missing companions silently skipped.
 - All PNG charts in section.md files are inlined as base64. Missing chart files left as broken images (not fatal).
+- A leading YAML frontmatter block (`--- … ---`) in `_synthesis.md` is stripped before rendering — it is metadata the masthead is parsed from, and would otherwise render as a literal key-value paragraph at the top of the Executive Summary. Pod `section.md` files carry no frontmatter and are unaffected.
 
 ## Report design
 

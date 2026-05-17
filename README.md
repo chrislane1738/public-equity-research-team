@@ -85,7 +85,7 @@ Claude Code when you want a real end-to-end check.
 
 | Command | What it does | Wall-clock |
 |---|---|---|
-| `/deep-dive <T>` | All pods → accountant audit + deck + memo + one-pager + DCF + comps + HTML | ~8 min |
+| `/deep-dive <T>` | All pods → accountant audit + deck + memo + one-pager + DCF + comps + HTML | ~35-50 min |
 | `/update <T>` | Quarterly refresh on a covered name; diff-style synthesis vs prior run | ~4-5 min |
 | `/earnings <T>` | Fundamentals + DCF + Risk → memo (lightweight accountant) | ~4 min |
 | `/morning <T>` | Fundamentals → MD writes a brief note | ~1 min |
@@ -94,6 +94,8 @@ Claude Code when you want a real end-to-end check.
 | `/screen "<criteria>"` | FMP screener + WebSearch → ranked candidates | ~2 min |
 | `/catalysts <T>` | Quick dated-events lookup | ~30s |
 | `/help` | Print `COMMANDS.md` | instant |
+
+*A full `/deep-dive` runs **~35-50 minutes** wall-clock and consumes roughly **750K–900K tokens** end to end — about 600K across the eight research subagents (each on its own isolated context window) plus orchestration and synthesis. Adding the memo and deck deliverables is ~120K more. Lighter workflows scale down proportionally.*
 
 Outputs land at `~/Desktop/Agentic_Equity_Reports/<TICKER>/` (configurable via `RESEARCH_DIR`).
 

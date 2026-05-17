@@ -167,6 +167,7 @@ _RE_PT = re.compile(r"##\s*Price Target:\s*\*\*([^*]+?)\*\*")
 _RE_DATE = re.compile(r"Synthesis date:\s*(\d{4}-\d{2}-\d{2})")
 _RE_SPOT = re.compile(r"Reference price:\s*\*{0,2}\$?([\d,.]+)")
 _RE_FIRST_H1 = re.compile(r"<h1[^>]*>.*?</h1>", re.DOTALL)
+_RE_FRONTMATTER = re.compile(r"\A---[ \t]*\r?\n.*?\r?\n---[ \t]*\r?\n", re.DOTALL)
 _RE_HEADING_ID = re.compile(
     r'<h([1-6])([^>]*)\sid="([^"]+)"([^>]*)>(.*?)</h\1>', re.DOTALL
 )
@@ -182,6 +183,17 @@ def _strip_first_h1(html: str) -> str:
     as an <h1>, which is redundant with the section heading the writer injects.
     """
     return _RE_FIRST_H1.sub("", html, count=1)
+
+
+def _strip_frontmatter(md_text: str) -> str:
+    """Remove a leading YAML frontmatter block (--- … ---) before rendering.
+
+    _synthesis.md carries frontmatter (ticker, company, rating, price_target,
+    …) that the masthead is parsed from; without this strip the block renders
+    as a literal key-value paragraph at the top of the Executive Summary. Pod
+    section.md files have no frontmatter and are returned unchanged.
+    """
+    return _RE_FRONTMATTER.sub("", md_text, count=1)
 
 
 def _prefix_heading_ids(html: str, pod: str) -> tuple[str, list[tuple[str, str]]]:
@@ -292,7 +304,7 @@ def render_section(section_path: Path) -> str:
     """Render a section.md to HTML. Returns a placeholder if the file is missing."""
     if not section_path.exists():
         return '<p class="placeholder">Section not produced — see logs.</p>'
-    md_text = section_path.read_text()
+    md_text = _strip_frontmatter(section_path.read_text())
     return markdown.markdown(md_text, extensions=["tables", "fenced_code", "toc"])
 
 
