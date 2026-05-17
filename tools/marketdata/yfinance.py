@@ -102,7 +102,10 @@ class YFinanceClient:
         }
 
     def get_historical_prices(self, ticker: str, period: str = "1y") -> list[HistoricalBar]:
-        df = yf.Ticker(ticker).history(period=period)
+        # yfinance history(period=) accepts only 1d/5d/1mo/3mo/6mo/1y/2y/5y/10y/ytd/max —
+        # map any unsupported value (e.g. "3y") up to the next valid window.
+        yf_period = {"3y": "5y"}.get(period, period)
+        df = yf.Ticker(ticker).history(period=yf_period)
         if df is None or df.empty:
             return []
         bars: list[HistoricalBar] = []
