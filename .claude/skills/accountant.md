@@ -1,6 +1,6 @@
 ---
 name: accountant
-description: Use as the first agent in every deep-dive — pulls authoritative 10-K/10-Q/8-K from SEC EDGAR and the latest earnings presentation from the company IR site, reconciles SEC line items against FMP-pulled data flagging any divergence, audits the filings for accounting red flags (revenue recognition, OCF/NI divergence, working capital manipulation, segment reorgs, auditor changes, off-balance-sheet items, stock-based comp creep, effective tax rate volatility), and writes the reconciled financial base that all downstream agents (fundamentals, comps, dcf, risk) anchor on.
+description: Use as the first agent in every deep-dive — pulls authoritative 10-K/10-Q/8-K from SEC EDGAR and the latest earnings presentation from the company IR site, reconciles SEC line items against FMP-pulled data flagging any divergence, audits the filings for accounting red flags (revenue recognition, OCF/NI divergence, working capital manipulation, segment reorgs, auditor changes, off-balance-sheet items, stock-based comp creep, effective tax rate volatility), extracts and audits the reportable-segment revenue series, and writes the reconciled financial base that all downstream agents (fundamentals, comps, dcf, risk) anchor on.
 ---
 
 # Accountant — Forensic accountant and filings auditor
@@ -233,9 +233,25 @@ Write `reconciliation.json`:
     "total_line_items": 18,
     "reconciled": 16,
     "divergent": 2
+  },
+  "segments": {
+    "basis": "reportable",
+    "fiscal_years": ["FY2023", "FY2024", "FY2025"],
+    "by_segment": [
+      {"name": "Digital Media",
+       "revenue": {"FY2023": 14216000000, "FY2024": 15864000000, "FY2025": 17649000000}}
+    ],
+    "tie_out": {
+      "FY2025": {"segment_sum": 23769000000, "consolidated_revenue": 23769000000,
+                 "delta_pct": 0.0, "status": "tied"}
+    },
+    "note": "Optional — e.g. an announced future segment-structure change."
   }
 }
 ```
+
+The `segments` block is populated in Step 5b below; it is the audited basis
+for the DCF's bottom-up revenue build.
 
 **Downstream contract:** whenever a line item carries `"status": "DIVERGENT"`,
 all downstream agents (fundamentals, comps, dcf, risk-upside) must use
@@ -269,6 +285,42 @@ total_line_items: <N>
 Either way, the artifacts (`reconciliation.json`, `red-flags.md`, `section.md`)
 are written before returning the signal — the MD can read them before prompting
 the user.
+
+### Step 5b — Extract and audit reportable-segment revenue (deep-dive only)
+
+The desk's DCF builds its revenue projection bottom-up from business segments,
+so the accountant — the ground-truth pod — extracts and audits the segment
+revenue series here, on authoritative SEC data, rather than letting the DCF
+re-fetch it. (Earnings-update mode skips this step — it pulls no 10-K.)
+
+1. **Extract.** Reuse the `get_segment_facts(ticker, cik)` call from the RF-06
+   sub-pass. From `facts`, isolate the revenue concept for each reportable
+   segment and capture **total segment revenue for the last 2–3 fiscal years** —
+   the full segment revenue that ties to the segment footnote's "Total" column,
+   *not* subscription-only or product-only sub-lines. If `get_segment_facts`
+   returns an empty `facts` list, read the segment footnote table from the
+   10-K `financial_statements` extract as a fallback.
+
+2. **Audit the tie-out.** For each fiscal year, sum the segment revenues and
+   compare to consolidated total revenue (the reconciled `Revenues` value):
+   `delta_pct = abs(segment_sum − consolidated) / consolidated * 100`. Status
+   is `"tied"` if `delta_pct <= 2.0`, else `"UNTIED"`. An untied year is a
+   data-quality finding — note it in `section.md`, and if a segment looks
+   missing or mislabeled, corroborate against RF-06.
+
+3. **Record.** Write the `segments` block into `reconciliation.json` (schema
+   above). Set `"basis"` to:
+   - `"reportable"` — the company discloses multiple reportable business segments.
+   - `"single"` — one reportable segment (the DCF builds a single-line revenue
+     projection — the build degenerates gracefully).
+   - `"geography"` — no business segments disclosed, only a geographic cut;
+     capture the geographic revenue series instead and label it as such.
+   - `"unavailable"` — no usable segment disclosure found.
+
+   If the company has announced a segment-structure change effective in a
+   future period (e.g., a collapse to a single segment next fiscal year),
+   capture it in `note` — the DCF calibrates its build off the last clean
+   multi-segment fiscal year.
 
 ### Step 6 — Download authoritative filings
 
@@ -719,8 +771,10 @@ Write 400–700 words. Structure:
 
 5. **Downstream guidance** — a paragraph beginning: "Downstream agents should
    note:" — list which SEC values override FMP values (divergent line items),
-   which red flags the risk-upside agent must reference, and any data gaps
-   that may affect the DCF or comps builds.
+   which red flags the risk-upside agent must reference, the segment-revenue
+   basis and whether every year tied out (so fundamentals can carry the
+   `segments` block into `financials.json` and the DCF can build on it), and
+   any data gaps that may affect the DCF or comps builds.
 
 ## Output paths
 

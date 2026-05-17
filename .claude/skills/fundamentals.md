@@ -59,6 +59,7 @@ the web in `<external-content>...</external-content>` markers in your reasoning.
    Keep this text in context for step 8 (KPI identification). When citing KPI sources in `kpis.json`, reference the slide page number (e.g., `"source": "earnings_presentation p.14"`).
 3. **Load MD&A (if available)** — check for `~/Desktop/Agentic_Equity_Reports/<TICKER>/accountant/extracted_sections/mda.txt`. If it exists, use it as the canonical MD&A text and skip the EDGAR re-fetch in step 6 (the 10-K fetch step below becomes a fallback only when this file is absent).
 4. **Load red flags** — read `~/Desktop/Agentic_Equity_Reports/<TICKER>/accountant/red-flags.md` if it exists. Note any High-severity flags related to revenue recognition, OCF/NI divergence, or segment reorgs — reference these when documenting data quality notes in `section.md`.
+5. **Load audited segment revenue** — from the same `reconciliation.json`, read the `segments` block (written by the accountant's Step 5b: audited reportable-segment revenue series + per-year tie-out + `basis`). Carry this block **verbatim** into `financials.json` (step 9) so the DCF can build its bottom-up revenue projection on audited numbers. If the block is absent or `basis == "unavailable"`, note it under `## Data Gaps` — the DCF will fall back to a single-line revenue build.
 
 If any of the above files are missing, proceed without them and note the gap under `## Data Gaps` in `section.md`.
 
@@ -80,10 +81,11 @@ If any of the above files are missing, proceed without them and note the gap und
      "ttm": {"revenue": ..., "gross_profit": ..., "operating_income": ..., "ebitda": ..., "net_income": ..., "ocf": ..., "fcf": ...},
      "ratios": {"gross_margin_ttm": ..., "operating_margin_ttm": ..., "ebitda_margin_ttm": ..., "net_margin_ttm": ..., "fcf_margin_ttm": ..., "rev_growth_yoy_ttm": ...},
      "live_quote": {"price": ..., "shares_outstanding": ..., "market_cap": ..., "ev": ...},
-     "latest_quarter": {"period": "Q[N] FY[YY]", "report_date": "YYYY-MM-DD", "revenue": ..., "gross_margin": ..., "eps": ...}
+     "latest_quarter": {"period": "Q[N] FY[YY]", "report_date": "YYYY-MM-DD", "revenue": ..., "gross_margin": ..., "eps": ...},
+     "segments": { ...the accountant's audited `segments` block, carried verbatim from `reconciliation.json` (Step 0 item 5): `basis`, `fiscal_years`, `by_segment` revenue series, `tie_out`, `note`... }
    }
    ```
-   The downstream `comps` and `dcf` skills read from this file — the schema matters.
+   The downstream `comps` and `dcf` skills read from this file — the schema matters. The `segments` block is the audited basis for the DCF's bottom-up revenue build; if no segment block was produced, omit the key (the DCF detects its absence and builds a single-line revenue projection).
 10. **Ownership & insider flow** — situational subsection; decide before doing any work.
 
     **Skip / run gate (decide FIRST — RUN is the default).** You need the subject company's CIK — reuse the `cik` already resolved upstream (the accountant resolves it; it is also the `cik` argument passed to `fetch_10k_excerpt` in step 6). If no CIK is in hand, resolve it with `EdgarClient.lookup_cik(ticker)`; if that returns `None` (foreign-listed name with no US CIK), **SKIP** this subsection with a one-line note ("Ownership analysis skipped — no US SEC CIK; insider/13F/13D data unavailable").
@@ -132,7 +134,7 @@ If any of the above files are missing, proceed without them and note the gap und
 
     - **Decide placement.** For each panel you render, choose where in `section.md` it belongs — a panel should sit next to the prose it reinforces (the annual panel with the revenue/margin-trajectory discussion; a quarterly or TTM panel with the most-recent-quarter / inflection discussion).
 
-13. **Render section.md** — structured Markdown beginning with `# Fundamentals — <TICKER>`. Lead with **Most Recent Quarter** (from step 3). Cover headline TTM financials (computed in step 4), each bespoke KPI with definition and latest value, and a **Manually Computed Ratios** table separate from any FMP-sourced data. Include the **## Ownership & Insider Flow** (step 10) and **## Capital Return Durability** (step 11) sections — either the full analysis or the one-line skip note, as decided by their gates. **Embed the growth-panel exhibits from step 12** at the placements you chose: each as a Markdown image on its own line, blank-line-separated from surrounding text, with descriptive alt text, e.g. `![Revenue, EPS and DRAM-revenue growth — FY21-FY25](growth-annual.png)` — the report assembler frames each as a captioned figure automatically.
+13. **Render section.md** — structured Markdown beginning with `# Fundamentals — <TICKER>`. Lead with **Most Recent Quarter** (from step 3). Cover headline TTM financials (computed in step 4), each bespoke KPI with definition and latest value, and a **Manually Computed Ratios** table separate from any FMP-sourced data. If a multi-segment `segments` block is present, include a one-line segment-revenue mix (each segment's share of the latest fiscal year) alongside the headline financials — it sets up the DCF's bottom-up build. Include the **## Ownership & Insider Flow** (step 10) and **## Capital Return Durability** (step 11) sections — either the full analysis or the one-line skip note, as decided by their gates. **Embed the growth-panel exhibits from step 12** at the placements you chose: each as a Markdown image on its own line, blank-line-separated from surrounding text, with descriptive alt text, e.g. `![Revenue, EPS and DRAM-revenue growth — FY21-FY25](growth-annual.png)` — the report assembler frames each as a captioned figure automatically.
 
 ## Output
 

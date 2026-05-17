@@ -37,6 +37,63 @@ def project_revenue(base: float, growth_path: list[float]) -> list[float]:
     return revs
 
 
+def project_segment_revenue(segments: list[dict]) -> dict:
+    """Bottom-up revenue build — project each business segment, sum to a total,
+    and derive the implied revenue-weighted total growth path.
+
+    This is the first step of a segment-driven DCF: rather than assuming one
+    top-level growth path, total revenue is built from the parts. Each segment
+    carries its own justified growth path; the blended total growth is an
+    *output*, weighted automatically by segment size.
+
+    Each `segments` entry is a dict {"name": str, "base": float,
+    "growth_path": list[float]} with fractional growth rates (0.10 = 10%).
+    Every segment must share the same projection horizon. A single-segment
+    list is valid (the build degenerates to that segment's own path).
+
+    Returns a dict with:
+      segments              per-segment {name, base, growth_path, revenue[]}
+      total_base            sum of segment base revenues
+      total_revenue         per-year sum across segments
+      implied_growth_path   fractional blended growth implied by the segment sum
+    """
+    if not segments:
+        raise ValueError("segments must be non-empty")
+    horizon = len(segments[0]["growth_path"])
+    if horizon == 0:
+        raise ValueError("growth_path must be non-empty")
+    if any(len(s["growth_path"]) != horizon for s in segments):
+        raise ValueError("all segments must share the same projection horizon")
+
+    projected = [
+        {
+            "name": s["name"],
+            "base": s["base"],
+            "growth_path": list(s["growth_path"]),
+            "revenue": project_revenue(s["base"], s["growth_path"]),
+        }
+        for s in segments
+    ]
+
+    total_base = sum(s["base"] for s in segments)
+    total_revenue = [
+        sum(p["revenue"][y] for p in projected) for y in range(horizon)
+    ]
+
+    implied_growth_path: list[float] = []
+    prev = total_base
+    for rev in total_revenue:
+        implied_growth_path.append(rev / prev - 1 if prev else float("nan"))
+        prev = rev
+
+    return {
+        "segments": projected,
+        "total_base": total_base,
+        "total_revenue": total_revenue,
+        "implied_growth_path": implied_growth_path,
+    }
+
+
 def project_fcf(
     base_revenue: float,
     growth_path: list[float],
