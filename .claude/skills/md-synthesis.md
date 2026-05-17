@@ -16,7 +16,17 @@ them, then write the synthesis document.
 The synthesis must contain:
 1. Rating (Buy/Hold/Sell) — decided ONLY from the evidence in the sections, no priors.
 2. Price Target.
-3. Executive summary (3 paragraphs).
+3. Executive summary (3 paragraphs), immediately followed by two subsections
+   beneath it (`## Idiosyncratic Risks` and `## Systematic Risks`):
+   - **Idiosyncratic Risks** — the company-specific risks: product/competitive
+     position, execution, management/key-person, balance-sheet quality. Surface
+     the accountant's High- and Medium-severity red flags here.
+   - **Systematic Risks** — the market-wide risks the stock is exposed to:
+     interest-rate / Fed path, macro / recession, FX, and sector or factor
+     exposure.
+   Both subsections appear regardless of the rating. They will repeat points the
+   industry / risk / macro sections make in full — that is intended; the
+   executive summary must stand on its own.
 4. Valuation Triangulation table — every method (DCF GGM, DCF Exit, DCF Blend,
    Comps median, Comps growth-adj, 52-week anchor) with implied price and weight.
    Weights must sum to 100%.
@@ -49,7 +59,7 @@ These framing rules govern the *order and emphasis* of the synthesis sections, n
    - **Medium-severity flags** must be referenced in the Risk paragraph of the synthesis.
    - **Low-severity flags** may be omitted from the synthesis, but the synthesis text must not contradict them.
 4. **Decide rating** — derive Buy/Hold/Sell solely from the evidence across all sections. Do not apply priors about the company or sector.
-5. **Produce synthesis** — write the six-part synthesis document per the SYSTEM_PROMPT above, applying the Plan B framing rule appropriate to the rating.
+5. **Produce synthesis** — write the synthesis document per the SYSTEM_PROMPT above (Rating, Price Target, Executive Summary + the Idiosyncratic/Systematic Risk subsections, Valuation Triangulation, Application Logic, Decision Conditions), applying the Plan B framing rule appropriate to the rating.
 6. **Write output** — use the `Write` tool to save the completed synthesis to `~/Desktop/Agentic_Equity_Reports/<TICKER>/synthesis/_synthesis.md`. Create the `synthesis/` directory if it does not exist.
 
 ## Mode parameter — `mode="update"` (diff against prior synthesis)
