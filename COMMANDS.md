@@ -3,10 +3,11 @@
 All workflows accept arguments inline (`/deep-dive NVDA`) and also work as
 natural-language prompts ("deep-dive on NVDA").
 
-## `/deep-dive <TICKER>` — Full Deep-Dive (~8 min)
+## `/deep-dive <TICKER>` — Full Deep-Dive (~10-11 min)
 
 Stages: accountant (filings audit) → fundamentals → 5 research pods in parallel
-→ DCF (after comps) → synthesis → deck + memo in parallel → HTML rollup.
+→ model (3-statement build) → DCF → synthesis → model (scenario analysis) →
+deck + memo in parallel → HTML rollup.
 
 Outputs: every section.md + every artifact, plus `report.html`.
 

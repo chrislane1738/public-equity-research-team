@@ -1,11 +1,11 @@
 # Public Equity Research Team
 
-![tests](https://img.shields.io/badge/tests-167%20passing-2ea44f)
+![tests](https://img.shields.io/badge/tests-211%20passing-2ea44f)
 ![python](https://img.shields.io/badge/python-3.14-3776ab)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 ![built with Claude Code](https://img.shields.io/badge/built%20with-Claude%20Code-d97757)
 
-Local-first multi-agent equity research workstation. Claude Code is the managing director; **13 skills** under `.claude/skills/` orchestrate a roster of specialized research pods (Accountant · Fundamentals · Industry · DCF · Comps · Macro · Risk · Technicals · Deck Builder · Memo Builder · MD) to produce institutional-quality research — pitch deck, written memo, one-pager, DCF model, comps table, self-contained HTML report — for any US-listed equity.
+Local-first multi-agent equity research workstation. Claude Code is the managing director; **14 skills** under `.claude/skills/` orchestrate a roster of specialized research pods (Accountant · Fundamentals · Industry · Model · DCF · Comps · Macro · Risk · Technicals · Deck Builder · Memo Builder · MD) to produce institutional-quality research — pitch deck, written memo, one-pager, 3-statement model, DCF model, comps table, self-contained HTML report — for any US-listed equity.
 
 ## Prerequisites — read before first run
 
@@ -85,7 +85,7 @@ Claude Code when you want a real end-to-end check.
 
 | Command | What it does | Wall-clock |
 |---|---|---|
-| `/deep-dive <T>` | All pods → accountant audit + deck + memo + one-pager + DCF + comps + HTML | ~35-50 min |
+| `/deep-dive <T>` | All pods → accountant audit + 3-statement model + DCF + comps + scenario analysis + deck + memo + one-pager + HTML | ~35-50 min |
 | `/update <T>` | Quarterly refresh on a covered name; diff-style synthesis vs prior run | ~4-5 min |
 | `/earnings <T>` | Fundamentals + DCF + Risk → memo (lightweight accountant) | ~4 min |
 | `/morning <T>` | Fundamentals → MD writes a brief note | ~1 min |
@@ -95,7 +95,7 @@ Claude Code when you want a real end-to-end check.
 | `/catalysts <T>` | Quick dated-events lookup | ~30s |
 | `/help` | Print `COMMANDS.md` | instant |
 
-*A full `/deep-dive` runs **~35-50 minutes** wall-clock and consumes roughly **750K–900K tokens** end to end — about 600K across the eight research subagents (each on its own isolated context window) plus orchestration and synthesis. Adding the memo and deck deliverables is ~120K more. Lighter workflows scale down proportionally.*
+*A full `/deep-dive` runs **~35-50 minutes** wall-clock and consumes roughly **800K–950K tokens** end to end — about 650K across the nine research subagents (each on its own isolated context window — the `model` skill runs twice, build then scenarios) plus orchestration and synthesis. Adding the memo and deck deliverables is ~120K more. Lighter workflows scale down proportionally.*
 
 Outputs land at `~/Desktop/Agentic_Equity_Reports/<TICKER>/` (configurable via `RESEARCH_DIR`).
 
@@ -126,21 +126,22 @@ SEC filings against FMP and pauses for the user if anything diverges.
 
 ```
 .claude/
-  skills/            13 skill definitions (one per research pod + orchestration)
+  skills/            14 skill definitions (one per research pod + orchestration)
   commands/          9 slash commands (/deep-dive, /update, /earnings, …)
 
 tools/               Deterministic Python helpers
   marketdata/        FMP + yfinance abstraction (MarketData facade)
   edgar.py           SEC EDGAR client (edgartools-backed)
   fred.py            FRED macro data client
-  dcf_engine.py      DCF model engine
+  model_engine.py    3-statement revenue / FCF projection engine
+  dcf_engine.py      DCF engine — WACC, regression beta, terminal value, discounting
   multiples.py       Comps multiples math
   charts.py          Chart generation
   html_writer.py     Self-contained report.html assembler
   settings.py        Dotenv-loaded keys
 
 requirements.txt     Pinned dependencies
-tests/               pytest — 167 tests covering tools/ helpers
+tests/               pytest — 211 tests covering tools/ helpers
 docs/superpowers/    specs + plans + handoffs
 ```
 
@@ -159,6 +160,6 @@ docs/superpowers/    specs + plans + handoffs
 See `docs/superpowers/specs/2026-05-13-skill-based-migration-design.md` for the
 full design spec, and `docs/superpowers/handoff/2026-05-15-data-layer-forensic-update.md`
 for the current capability surface (data layer, EDGAR ownership methods,
-accountant forensic sub-passes). TL;DR: Claude Code is the MD; 13 skills under
+accountant forensic sub-passes). TL;DR: Claude Code is the MD; 14 skills under
 `.claude/skills/`; 9 slash commands under `.claude/commands/`; deterministic
 helpers under `tools/`.
