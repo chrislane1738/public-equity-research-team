@@ -7,6 +7,7 @@ from tools.model_engine import (
     project_segment_revenue,
     project_fcf,
     project_fcf_path,
+    build_projection,
 )
 
 
@@ -101,6 +102,52 @@ def test_project_fcf_path_rejects_length_mismatch():
         project_fcf_path(
             revenue_path=[100, 110],
             ebit_margin_path=[0.30],
+            tax_rate=0.21, da_pct_revenue=0.05,
+            capex_pct_revenue=0.07, wc_change_pct_revenue=0.01,
+        )
+
+
+def test_build_projection_assembles_the_dcf_contract():
+    seg = project_segment_revenue([
+        {"name": "Core", "base": 800, "growth_path": [0.10, 0.10]},
+        {"name": "Legacy", "base": 200, "growth_path": [-0.05, -0.05]},
+    ])
+    proj = build_projection(
+        ticker="TEST",
+        base_year_label="TTM ending 2026-03-31",
+        segment_result=seg,
+        ebit_margin_path=[0.25, 0.26],
+        tax_rate=0.21,
+        da_pct_revenue=0.05,
+        capex_pct_revenue=0.07,
+        wc_change_pct_revenue=0.01,
+    )
+    assert proj["ticker"] == "TEST"
+    assert proj["horizon"] == 2
+    assert proj["base_year"]["label"] == "TTM ending 2026-03-31"
+    # revenue path is the segment-summed total, not a re-derived growth path
+    assert proj["revenue"] == seg["total_revenue"]
+    assert proj["implied_growth"] == seg["implied_growth_path"]
+    # year 1: Core 800*1.10=880, Legacy 200*0.95=190 → rev 1070
+    #         ebit 1070*0.25=267.5, nopat 267.5*0.79=211.325,
+    #         da 53.5, capex 74.9, wc 10.7 → fcf 211.325+53.5-74.9-10.7=179.225
+    assert math.isclose(proj["revenue"][0], 1070)
+    assert math.isclose(proj["ebit"][0], 267.5)
+    assert math.isclose(proj["unlevered_fcf"][0], 179.225, rel_tol=1e-9)
+    assert proj["segments"] == seg["segments"]
+    assert proj["drivers"]["tax_rate"] == 0.21
+    assert proj["drivers"]["ebit_margin_path"] == [0.25, 0.26]
+    assert "model skill" in proj["_source"]
+
+
+def test_build_projection_rejects_margin_path_horizon_mismatch():
+    seg = project_segment_revenue([
+        {"name": "Solo", "base": 500, "growth_path": [0.10, 0.10]},
+    ])
+    with pytest.raises(ValueError, match="same length"):
+        build_projection(
+            ticker="X", base_year_label="TTM", segment_result=seg,
+            ebit_margin_path=[0.25],  # 1 vs horizon 2
             tax_rate=0.21, da_pct_revenue=0.05,
             capex_pct_revenue=0.07, wc_change_pct_revenue=0.01,
         )

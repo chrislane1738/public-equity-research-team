@@ -115,3 +115,50 @@ def project_fcf(
         revenues, ebit_margin_path, tax_rate,
         da_pct_revenue, capex_pct_revenue, wc_change_pct_revenue,
     )
+
+
+def build_projection(
+    ticker: str,
+    base_year_label: str,
+    segment_result: dict,
+    ebit_margin_path: list[float],
+    tax_rate: float,
+    da_pct_revenue: float,
+    capex_pct_revenue: float,
+    wc_change_pct_revenue: float,
+) -> dict:
+    """Assemble the base-case projection contract consumed by the `dcf` skill.
+
+    `segment_result` is the dict returned by `project_segment_revenue`. The
+    segment-summed total revenue is walked to unlevered FCF; the result is
+    packaged into the `model/projection.json` shape: the 5-year revenue / EBIT /
+    NOPAT / D&A / capex / ΔWC / unlevered-FCF path, the segment build, and the
+    driver set.
+    """
+    revenue_path = segment_result["total_revenue"]
+    walk = project_fcf_path(
+        revenue_path, ebit_margin_path, tax_rate,
+        da_pct_revenue, capex_pct_revenue, wc_change_pct_revenue,
+    )
+    return {
+        "ticker": ticker,
+        "horizon": len(revenue_path),
+        "base_year": {"label": base_year_label},
+        "revenue": revenue_path,
+        "implied_growth": segment_result["implied_growth_path"],
+        "ebit": [y["ebit"] for y in walk],
+        "nopat": [y["nopat"] for y in walk],
+        "da": [y["da"] for y in walk],
+        "capex": [y["capex"] for y in walk],
+        "wc_change": [y["wc_change"] for y in walk],
+        "unlevered_fcf": [y["fcf"] for y in walk],
+        "segments": segment_result["segments"],
+        "drivers": {
+            "ebit_margin_path": list(ebit_margin_path),
+            "tax_rate": tax_rate,
+            "da_pct_revenue": da_pct_revenue,
+            "capex_pct_revenue": capex_pct_revenue,
+            "wc_change_pct_revenue": wc_change_pct_revenue,
+        },
+        "_source": "model skill, phase: build",
+    }
