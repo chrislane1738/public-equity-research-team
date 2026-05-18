@@ -264,10 +264,20 @@ def test_write_report_html_rail_has_prefixed_subsection_links(tmp_path):
     assert 'href="#industry__a-subsection"' in html
 
 
+def test_write_report_html_strips_em_dashes(tmp_path):
+    ticker_dir = _build_min_tree(tmp_path, "MU", REAL_SYNTH)
+    (ticker_dir / "fundamentals" / "section.md").write_text(
+        "# Fundamentals\n\nRevenue grew — sharply — this year.\n"
+    )
+    html = write_report_html(ticker_dir, "MU").read_text()
+    assert "—" not in html
+    assert "Revenue grew - sharply - this year." in html
+
+
 def test_write_report_html_falls_back_to_plain_title(tmp_path):
     ticker_dir = _build_min_tree(tmp_path, "XYZ", "# Synthesis\n\nNo rating.\n")
     html = write_report_html(ticker_dir, "XYZ").read_text()
-    assert "XYZ — Equity Research Report" in html
+    assert "XYZ - Equity Research Report" in html  # em-dash stripped to a hyphen
     assert 'class="callbox"' not in html
 
 

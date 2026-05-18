@@ -419,5 +419,7 @@ def write_report_html(ticker_dir: Path, ticker: str) -> Path:
     parts.append("</body>\n</html>\n")
 
     out = ticker_dir / "report.html"
-    out.write_text("\n".join(parts))
+    # House style: no em-dashes in the rendered report — replace with a hyphen.
+    html = "\n".join(parts).replace("—", "-")
+    out.write_text(html)
     return out
