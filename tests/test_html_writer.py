@@ -279,3 +279,30 @@ def test_write_report_html_escapes_masthead_fields(tmp_path):
     masthead = html.split('<header class="masthead">')[1].split('</header>')[0]
     assert "<img src=x onerror=alert(1)>" not in masthead
     assert "&lt;img src=x onerror=alert(1)&gt;" in masthead
+
+
+def test_section_order_includes_model_before_dcf():
+    from tools.html_writer import SECTION_ORDER
+    pods = [pod for pod, _label, _fn in SECTION_ORDER]
+    assert "model" in pods
+    assert pods.index("model") < pods.index("dcf")
+
+
+def test_companion_links_include_model_workbook():
+    from tools.html_writer import COMPANION_LINKS
+    templates = [t for t, _label in COMPANION_LINKS]
+    assert any("model.xlsx" in t for t in templates)
+
+
+def test_model_section_renders_section_and_scenarios(tmp_path):
+    from tools.html_writer import write_report_html
+    tdir = tmp_path / "TEST"
+    (tdir / "synthesis").mkdir(parents=True)
+    (tdir / "synthesis" / "_synthesis.md").write_text("# TEST\nRating: Buy\n")
+    (tdir / "model").mkdir()
+    (tdir / "model" / "section.md").write_text("# Model — TEST\nMODEL_BODY_MARKER\n")
+    (tdir / "model" / "scenarios.md").write_text("# Scenario Analysis — TEST\nSCENARIO_BODY_MARKER\n")
+    out = write_report_html(tdir, "TEST")
+    html = out.read_text()
+    assert "MODEL_BODY_MARKER" in html
+    assert "SCENARIO_BODY_MARKER" in html
