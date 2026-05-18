@@ -36,7 +36,7 @@ COMPANION_LINKS = [
     ("reports/{ticker} memo.docx", "Memo (.docx)"),
     ("reports/{ticker} pitch.pptx", "Pitch Deck (.pptx)"),
     ("reports/{ticker} onepager.pdf", "One-Pager (.pdf)"),
-    ("model/{ticker} model.xlsx", "3-Statement Model (.xlsx)"),
+    ("model/{ticker} model.xlsx", "3-statement-model"),
     ("dcf/{ticker} dcf.xlsx", "DCF Model (.xlsx)"),
     ("comps/{ticker} comps.xlsx", "Comps Model (.xlsx)"),
 ]
