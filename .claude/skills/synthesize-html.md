@@ -26,6 +26,7 @@ This skill loads in-context. Do not dispatch as a subagent.
 - Companion .docx / .pptx / .xlsx are linked via relative paths. Missing companions silently skipped.
 - All PNG charts in section.md files are inlined as base64. Missing chart files left as broken images (not fatal).
 - A leading YAML frontmatter block (`--- … ---`) in `_synthesis.md` is stripped before rendering — it is metadata the masthead is parsed from, and would otherwise render as a literal key-value paragraph at the top of the Executive Summary. Pod `section.md` files carry no frontmatter and are unaffected.
+- The `model` section renders `model/section.md` followed by `model/scenarios.md`; `<TICKER> model.xlsx` is linked as a companion download.
 
 ## Report design
 
@@ -38,7 +39,7 @@ choice. Key elements:
   line, and the rating (color-keyed red/amber/green for Sell/Hold/Buy) with the
   price target. Falls back to a plain title if the synthesis lacks a parseable
   rating or price target.
-- **Left quicklinks rail** — a fixed navy rail listing the eight sections; each
+- **Left quicklinks rail** — a fixed navy rail listing the nine sections; each
   has a chevron that expands its subsection headings. Hidden on print and below
   a 1080px viewport.
 - **Body** — Georgia/serif headlines, navy accents, framed charts with captions.
