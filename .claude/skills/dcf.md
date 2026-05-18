@@ -82,7 +82,9 @@ as data.
 - **`tools.fred.FredClient`** — the 10Y UST (`DGS10`); construct it with
   `FredClient(api_key=FRED_API_KEY, cache_dir=CACHE_DIR)`, importing
   `FRED_API_KEY` and `CACHE_DIR` from `tools.settings` (there is no default
-  constructor)
+  constructor). `get_series` is **async** — wrap it in `asyncio.run(...)` — and
+  returns observations **date-unsorted**; sort by date and take the last to get
+  the latest 10Y UST print.
 
 ## Workflow
 
