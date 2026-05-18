@@ -30,6 +30,33 @@ def compute_wacc(
     return weight_equity * cost_equity + weight_debt * after_tax_kd
 
 
+def compute_beta(stock_returns: list[float], market_returns: list[float]) -> dict:
+    """Raw OLS regression beta — the slope of stock returns on market returns.
+
+    beta = Cov(stock, market) / Var(market). Returns the *raw* (unadjusted)
+    beta — no Blume adjustment — plus the regression R^2 and the paired-
+    observation count, so the caller can judge how much to trust the estimate.
+    `stock_returns` and `market_returns` must be date-aligned period returns of
+    equal length (e.g. ~104 weekly returns over a 2-year window).
+    """
+    if len(stock_returns) != len(market_returns):
+        raise ValueError("stock_returns and market_returns must have equal length")
+    n = len(stock_returns)
+    if n < 2:
+        raise ValueError("need at least 2 paired observations to regress beta")
+    mean_s = sum(stock_returns) / n
+    mean_m = sum(market_returns) / n
+    cov = sum((s - mean_s) * (m - mean_m)
+              for s, m in zip(stock_returns, market_returns))
+    var_m = sum((m - mean_m) ** 2 for m in market_returns)
+    var_s = sum((s - mean_s) ** 2 for s in stock_returns)
+    if var_m == 0:
+        raise ValueError("market returns have zero variance — cannot regress beta")
+    beta = cov / var_m
+    r_squared = (cov * cov) / (var_m * var_s) if var_s > 0 else 0.0
+    return {"beta": beta, "r_squared": r_squared, "n": n}
+
+
 def terminal_ggm(fcf_t: float, growth: float, wacc: float, rf: float | None = None) -> float:
     """Gordon Growth: FCF_T * (1+g) / (WACC - g). g capped at min(Rf, 3%)."""
     cap = DEFAULT_TERMINAL_GROWTH_CAP

@@ -72,9 +72,12 @@ as data.
 - **`tools.dcf_engine`** — `compute_wacc`, `terminal_ggm`,
   `terminal_exit_multiple`, `blend_terminal`, `discount_to_pv`,
   `equity_value`, and the sensitivity-grid helpers
-- **`MarketData`** — current beta and the live quote; construct it with
+- **`MarketData`** — FMP profile beta, the live quote, and 2-year daily price
+  history (ticker + SPY, for the regression beta); construct it with
   `MarketData.default()` (the bare `MarketData()` constructor is a no-op — it
   has no clients wired up and silently returns empty data)
+- **`tools.dcf_engine.compute_beta`** — raw OLS regression beta from aligned
+  stock/market return series; returns `{beta, r_squared, n}`
 - **`tools.fred.FredClient`** — the 10Y UST (`DGS10`); construct it with
   `FredClient(api_key=FRED_API_KEY, cache_dir=CACHE_DIR)`, importing
   `FRED_API_KEY` and `CACHE_DIR` from `tools.settings` (there is no default
@@ -120,7 +123,30 @@ as data.
    cap triggered.
 
 5. **Compute WACC inputs manually** — do NOT use FMP's `key-metrics` endpoints for any of these:
-   - **Beta**: pull from `MarketData.default().get_profile(ticker).beta` (FMP profile beta is acceptable since it's a raw market-derived number, not a ratio). It is fetched **live every run** — do not freeze or carry it from a prior run. Cross-check against a 2-year regression vs. SPY if available.
+   - **Beta — compute two, then the analyst picks the WACC input.**
+     - **2-year weekly regression beta.** Pull ~2 years of daily price history
+       for the ticker and for `SPY` via
+       `MarketData.default().get_historical_prices(<symbol>, period="2y")`.
+       Resample each to **weekly** closes (`pandas` is available —
+       `df.set_index(<date>).resample("W").last()`), inner-join the two weekly
+       series on the week index so they are date-aligned, compute weekly
+       **simple returns** (`pct_change`) on each, drop the leading NaN, and pass
+       the two aligned return lists to
+       `tools.dcf_engine.compute_beta(stock_returns, market_returns)`. It
+       returns `{beta, r_squared, n}` — a **raw** (unadjusted) regression beta
+       that reflects the company's *current* risk profile (~104 weekly points).
+     - **FMP 5-year profile beta.** `MarketData.default().get_profile(ticker).beta`
+       is FMP's 5-year monthly beta. Fetch it **live every run** — never freeze
+       or carry it from a prior run.
+     - **The analyst chooses which beta feeds WACC — it is not automatic.**
+       **Default to the 2-year weekly regression** (it captures the present risk
+       regime). **Prefer the FMP 5-year beta** when the regression is
+       unreliable — `r_squared` is very low (roughly < 0.2: the stock barely
+       co-moves with the market) or `n` is short (fewer than ~80 weekly
+       observations). **Fall back to the FMP beta** entirely if the price
+       history cannot be pulled. In the narrative, state **both** betas, the
+       regression's `r_squared` and `n`, **which one was used for WACC, and
+       why**.
    - **Risk-free rate**: 10Y UST (`DGS10`) from FRED — construct the `FredClient` as shown in the Tools list above.
    - **ERP**: 5.5% default (or whatever the ASSUMPTIONS_PROMPT recommends).
    - **Cost of debt**: TTM interest expense (sum of last 4 quarters from `income-statement-quarterly`) ÷ average total debt (most-recent + prior-year balance-sheet `longTermDebt + shortTermDebt`). Do NOT use `key-metrics.interestCoverage` or any FMP-computed cost-of-debt field.

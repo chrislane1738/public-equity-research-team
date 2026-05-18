@@ -4,6 +4,7 @@ import pytest
 
 from tools.dcf_engine import (
     compute_wacc,
+    compute_beta,
     terminal_ggm,
     terminal_exit_multiple,
     blend_terminal,
@@ -34,6 +35,47 @@ def test_compute_wacc_uses_default_erp_5_5():
                         weight_equity=1.0, weight_debt=0.0)
     # cost_equity = 4 + 1.0 * 5.5 = 9.5; debt weight 0 → wacc = 9.5
     assert math.isclose(wacc, 9.5, rel_tol=1e-6)
+
+
+def test_compute_beta_recovers_a_known_slope():
+    # stock moves exactly 1.5x the market → beta 1.5, perfect fit
+    market = [0.02, -0.01, 0.03, -0.02, 0.015, 0.00, -0.025]
+    stock = [1.5 * m for m in market]
+    out = compute_beta(stock, market)
+    assert math.isclose(out["beta"], 1.5, rel_tol=1e-9)
+    assert math.isclose(out["r_squared"], 1.0, rel_tol=1e-9)
+    assert out["n"] == 7
+
+
+def test_compute_beta_unit_beta_when_stock_tracks_market():
+    market = [0.01, -0.02, 0.03, 0.00, -0.01]
+    out = compute_beta(market, market)
+    assert math.isclose(out["beta"], 1.0, rel_tol=1e-9)
+    assert math.isclose(out["r_squared"], 1.0, rel_tol=1e-9)
+
+
+def test_compute_beta_is_invariant_to_a_constant_alpha():
+    # a pure constant offset (alpha) shifts the intercept, not the slope or fit
+    market = [0.01, -0.02, 0.03, 0.00, -0.01]
+    stock = [m + 0.005 for m in market]
+    out = compute_beta(stock, market)
+    assert math.isclose(out["beta"], 1.0, rel_tol=1e-9)
+    assert math.isclose(out["r_squared"], 1.0, rel_tol=1e-9)
+
+
+def test_compute_beta_rejects_length_mismatch():
+    with pytest.raises(ValueError, match="equal length"):
+        compute_beta([0.01, 0.02], [0.01])
+
+
+def test_compute_beta_rejects_too_few_observations():
+    with pytest.raises(ValueError, match="at least 2"):
+        compute_beta([0.01], [0.01])
+
+
+def test_compute_beta_rejects_zero_market_variance():
+    with pytest.raises(ValueError, match="zero variance"):
+        compute_beta([0.01, 0.02, 0.03], [0.01, 0.01, 0.01])
 
 
 def test_terminal_ggm_perpetuity_formula():
