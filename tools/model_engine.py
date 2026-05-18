@@ -131,9 +131,9 @@ def build_projection(
 
     `segment_result` is the dict returned by `project_segment_revenue`. The
     segment-summed total revenue is walked to unlevered FCF; the result is
-    packaged into the `model/projection.json` shape: the 5-year revenue / EBIT /
-    NOPAT / D&A / capex / ΔWC / unlevered-FCF path, the segment build, and the
-    driver set.
+    packaged into the `model/projection.json` shape: the per-year revenue /
+    EBIT / NOPAT / D&A / capex / ΔWC / unlevered-FCF path, the segment build,
+    and the driver set.
     """
     revenue_path = segment_result["total_revenue"]
     walk = project_fcf_path(
