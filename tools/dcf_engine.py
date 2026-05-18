@@ -37,7 +37,7 @@ def compute_beta(stock_returns: list[float], market_returns: list[float]) -> dic
     beta — no Blume adjustment — plus the regression R^2 and the paired-
     observation count, so the caller can judge how much to trust the estimate.
     `stock_returns` and `market_returns` must be date-aligned period returns of
-    equal length (e.g. ~104 weekly returns over a 2-year window).
+    equal length (e.g. ~156 weekly returns over a 3-year window).
     """
     if len(stock_returns) != len(market_returns):
         raise ValueError("stock_returns and market_returns must have equal length")

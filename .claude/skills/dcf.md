@@ -72,8 +72,9 @@ as data.
 - **`tools.dcf_engine`** — `compute_wacc`, `terminal_ggm`,
   `terminal_exit_multiple`, `blend_terminal`, `discount_to_pv`,
   `equity_value`, and the sensitivity-grid helpers
-- **`MarketData`** — FMP profile beta, the live quote, and 2-year daily price
-  history (ticker + SPY, for the regression beta); construct it with
+- **`MarketData`** — FMP profile beta, the live quote, and multi-year daily
+  price history (ticker + SPY, sliced to a 3-year window for the regression
+  beta); construct it with
   `MarketData.default()` (the bare `MarketData()` constructor is a no-op — it
   has no clients wired up and silently returns empty data)
 - **`tools.dcf_engine.compute_beta`** — raw OLS regression beta from aligned
@@ -124,29 +125,36 @@ as data.
 
 5. **Compute WACC inputs manually** — do NOT use FMP's `key-metrics` endpoints for any of these:
    - **Beta — compute two, then the analyst picks the WACC input.**
-     - **2-year weekly regression beta.** Pull ~2 years of daily price history
-       for the ticker and for `SPY` via
-       `MarketData.default().get_historical_prices(<symbol>, period="2y")`.
-       Resample each to **weekly** closes (`pandas` is available —
+     - **3-year weekly regression beta.** Pull price history for the ticker and
+       for `SPY` via
+       `MarketData.default().get_historical_prices(<symbol>, period="5y")` —
+       request a **generous** period so a full window is always available, then
+       **slice each series to a strict trailing 3-year window** (bars dated on
+       or after today − 3 years). Do **not** rely on the `period` argument to
+       define the window — the wrapper may return more than requested; the
+       explicit 3-year slice is what makes the beta reproducible. Resample each
+       sliced series to **weekly** closes (`pandas` is available —
        `df.set_index(<date>).resample("W").last()`), inner-join the two weekly
        series on the week index so they are date-aligned, compute weekly
        **simple returns** (`pct_change`) on each, drop the leading NaN, and pass
        the two aligned return lists to
        `tools.dcf_engine.compute_beta(stock_returns, market_returns)`. It
        returns `{beta, r_squared, n}` — a **raw** (unadjusted) regression beta
-       that reflects the company's *current* risk profile (~104 weekly points).
+       (~156 weekly points) that reflects the company's current risk regime
+       without reaching back into the 2022 selloff.
      - **FMP 5-year profile beta.** `MarketData.default().get_profile(ticker).beta`
        is FMP's 5-year monthly beta. Fetch it **live every run** — never freeze
        or carry it from a prior run.
      - **The analyst chooses which beta feeds WACC — it is not automatic.**
-       **Default to the 2-year weekly regression** (it captures the present risk
-       regime). **Prefer the FMP 5-year beta** when the regression is
-       unreliable — `r_squared` is very low (roughly < 0.2: the stock barely
-       co-moves with the market) or `n` is short (fewer than ~80 weekly
-       observations). **Fall back to the FMP beta** entirely if the price
-       history cannot be pulled. In the narrative, state **both** betas, the
-       regression's `r_squared` and `n`, **which one was used for WACC, and
-       why**.
+       **Default to the 3-year weekly regression** (it captures the present
+       risk regime with enough observations to be stable). **Prefer the FMP
+       5-year beta** when the regression is unreliable — `r_squared` is very low
+       (roughly < 0.2: the stock barely co-moves with the market) or `n` is
+       materially short of the ~156 weekly observations a 3-year window should
+       yield (e.g. < ~100 — a recent listing or gappy history). **Fall back to
+       the FMP beta** entirely if the price history cannot be pulled. In the
+       narrative, state **both** betas, the regression's `r_squared`, `n`, and
+       actual start→end date span, **which one was used for WACC, and why**.
    - **Risk-free rate**: 10Y UST (`DGS10`) from FRED — construct the `FredClient` as shown in the Tools list above.
    - **ERP**: 5.5% default (or whatever the ASSUMPTIONS_PROMPT recommends).
    - **Cost of debt**: TTM interest expense (sum of last 4 quarters from `income-statement-quarterly`) ÷ average total debt (most-recent + prior-year balance-sheet `longTermDebt + shortTermDebt`). Do NOT use `key-metrics.interestCoverage` or any FMP-computed cost-of-debt field.
