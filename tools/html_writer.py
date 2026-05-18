@@ -167,11 +167,6 @@ document.querySelectorAll('section.section').forEach(function(s){ sectionObserve
 """
 
 
-_RE_NAME = re.compile(r"\*\*([^*]+?\(([A-Z][A-Z.]{0,5})\))\*\*")
-_RE_RATING = re.compile(r"##\s*Rating:\s*\*\*([A-Za-z]+)\*\*")
-_RE_PT = re.compile(r"##\s*Price Target:\s*\*\*([^*]+?)\*\*")
-_RE_DATE = re.compile(r"Synthesis date:\s*(\d{4}-\d{2}-\d{2})")
-_RE_SPOT = re.compile(r"Reference price:\s*\*{0,2}\$?([\d,.]+)")
 _RE_FIRST_H1 = re.compile(r"<h1[^>]*>.*?</h1>", re.DOTALL)
 _RE_FRONTMATTER = re.compile(r"\A---[ \t]*\r?\n.*?\r?\n---[ \t]*\r?\n", re.DOTALL)
 _RE_HEADING_ID = re.compile(
@@ -263,34 +258,41 @@ def _build_rail(nav: list[tuple[str, str, list[tuple[str, str]]]]) -> str:
 
 
 def _extract_masthead(synthesis_md: str) -> dict:
-    """Parse masthead fields from _synthesis.md.
+    """Parse masthead fields from the synthesis YAML frontmatter.
 
-    Returns {} (caller falls back to a plain title) if either the rating or
-    the price target cannot be found — the writer must never fail on a
-    synthesis that drifts from the expected format.
+    `md-synthesis` writes `_synthesis.md` with a leading `--- ... ---`
+    frontmatter block carrying `ticker`, `company`, `date`, `rating`,
+    `price_target` and `spot_at_synthesis`. Returns {} — the caller falls back
+    to a plain title — when there is no frontmatter or it lacks a rating or a
+    price target.
     """
-    rating_m = _RE_RATING.search(synthesis_md)
-    pt_m = _RE_PT.search(synthesis_md)
-    if not rating_m or not pt_m:
+    if not synthesis_md.startswith("---"):
         return {}
-    rating = rating_m.group(1).strip().upper()
-    name_m = _RE_NAME.search(synthesis_md)
-    if name_m:
-        ticker = name_m.group(2)
-        base = name_m.group(1).rsplit("(", 1)[0].strip().rstrip(",").strip()
-        company = f"{base} — {ticker}"
-    else:
-        company, ticker = "", ""
-    date_m = _RE_DATE.search(synthesis_md)
-    spot_m = _RE_SPOT.search(synthesis_md)
+    close = synthesis_md.find("\n---", 3)
+    if close == -1:
+        return {}
+    fields: dict[str, str] = {}
+    for line in synthesis_md[3:close].splitlines():
+        key, sep, value = line.partition(":")
+        if sep:
+            fields[key.strip().lower()] = value.strip()
+    rating = fields.get("rating", "").upper()
+    price_target = fields.get("price_target", "")
+    if not rating or not price_target:
+        return {}
+    if not price_target.startswith("$"):
+        price_target = f"${price_target}"
+    ticker = fields.get("ticker", "")
+    company = fields.get("company", "")
+    name = f"{company} ({ticker})" if company and ticker else (company or ticker)
     return {
-        "company": company,
+        "company": name,
         "ticker": ticker,
         "rating": rating,
         "rating_class": _RATING_CLASS.get(rating, ""),
-        "price_target": pt_m.group(1).strip(),
-        "date": date_m.group(1) if date_m else "",
-        "spot": spot_m.group(1) if spot_m else "",
+        "price_target": price_target,
+        "date": fields.get("date", ""),
+        "spot": fields.get("spot_at_synthesis", "").lstrip("$"),
     }
 
 

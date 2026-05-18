@@ -104,14 +104,19 @@ def test_write_report_html_skips_missing_companion_links(tmp_path):
     assert 'href="reports/NVDA%20pitch.pptx"' not in html
 
 
-REAL_SYNTH = """# MU — Managing Director Synthesis
+REAL_SYNTH = """---
+ticker: MU
+company: Micron Technology, Inc.
+date: 2026-05-16
+rating: Sell
+price_target: 400
+spot_at_synthesis: 724.66
+analyst: Managing Director — synthesis
+---
 
-**Micron Technology, Inc. (MU)** | Technology / Semiconductors (Memory)
-Synthesis date: 2026-05-16 | Reference price: **$724.66** | Market cap ~ $817B
+# MU — Managing Director Synthesis
 
-## Rating: **SELL**
-
-## Price Target: **$400** (~ -45% from $724.66)
+**Rating: SELL**  |  **Price Target: $400**  |  Spot $724.66
 """
 
 
@@ -123,21 +128,22 @@ def test_extract_masthead_happy_path():
     assert m["date"] == "2026-05-16"
     assert m["spot"] == "724.66"
     assert m["ticker"] == "MU"
-    assert m["company"] == "Micron Technology, Inc. — MU"
+    assert m["company"] == "Micron Technology, Inc. (MU)"
 
 
-def test_extract_masthead_fallback_when_rating_missing():
-    assert _extract_masthead("# Synthesis\n\nNo rating here.\n") == {}
+def test_extract_masthead_fallback_when_no_frontmatter():
+    assert _extract_masthead("# Synthesis\n\nNo frontmatter here.\n") == {}
 
 
 def test_extract_masthead_fallback_when_pt_missing():
-    assert _extract_masthead("## Rating: **BUY**\n\nNo target.\n") == {}
+    # frontmatter present with a rating but no price_target → unparseable
+    assert _extract_masthead("---\nticker: X\nrating: Buy\n---\n\n# X\n") == {}
 
 
 def test_extract_masthead_buy_and_hold_classes():
-    buy = _extract_masthead("## Rating: **BUY**\n\n## Price Target: **$200**\n")
+    buy = _extract_masthead("---\nticker: X\nrating: BUY\nprice_target: 200\n---\n")
     assert buy["rating_class"] == "buy"
-    hold = _extract_masthead("## Rating: **Hold**\n\n## Price Target: **$150**\n")
+    hold = _extract_masthead("---\nticker: Y\nrating: Hold\nprice_target: 150\n---\n")
     assert hold["rating_class"] == "hold"
 
 
@@ -266,13 +272,16 @@ def test_write_report_html_falls_back_to_plain_title(tmp_path):
 
 
 def test_write_report_html_escapes_masthead_fields(tmp_path):
-    synth = """# Synthesis
+    synth = """---
+ticker: EVL
+company: Evil Corp <img src=x onerror=alert(1)>
+date: 2026-05-16
+rating: Sell
+price_target: 10
+spot_at_synthesis: 100
+---
 
-**Evil Corp (EVL)** | Tech
-
-## Rating: **SELL**
-
-## Price Target: **$10 <img src=x onerror=alert(1)>**
+# EVL — Synthesis
 """
     ticker_dir = _build_min_tree(tmp_path, "EVL", synth)
     html = write_report_html(ticker_dir, "EVL").read_text()

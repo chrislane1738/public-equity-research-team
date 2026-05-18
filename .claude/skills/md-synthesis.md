@@ -62,6 +62,22 @@ These framing rules govern the *order and emphasis* of the synthesis sections, n
 5. **Produce synthesis** — write the synthesis document per the SYSTEM_PROMPT above (Rating, Price Target, Executive Summary + the Idiosyncratic/Systematic Risk subsections, Valuation Triangulation, Application Logic, Decision Conditions), applying the Plan B framing rule appropriate to the rating.
 6. **Write output** — use the `Write` tool to save the completed synthesis to `~/Desktop/Agentic_Equity_Reports/<TICKER>/synthesis/_synthesis.md`. Create the `synthesis/` directory if it does not exist.
 
+   **The file MUST begin with a YAML frontmatter block.** The report masthead is parsed from it (`synthesize-html` / `tools.html_writer._extract_masthead`); a missing or malformed block makes the masthead silently fall back to a plain title. Write it exactly in this shape, immediately followed by the `# <TICKER> — Managing Director Synthesis` heading and the body:
+
+   ```
+   ---
+   ticker: <TICKER>
+   company: <Company legal name>
+   date: <YYYY-MM-DD>
+   rating: <Buy | Hold | Sell>
+   price_target: <number, no $ sign>
+   spot_at_synthesis: <number, no $ sign>
+   analyst: Managing Director — synthesis
+   ---
+   ```
+
+   `price_target` and `spot_at_synthesis` are bare numbers (e.g. `350`, `247.60`). "No preamble" in the SYSTEM_PROMPT means no conversational lead-in — it does **not** exclude this frontmatter block, which is required metadata.
+
 ## Mode parameter — `mode="update"` (diff against prior synthesis)
 
 The dispatching command can pass `mode="update"` instead of the default
