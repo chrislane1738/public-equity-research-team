@@ -72,7 +72,13 @@ as data.
 - **`tools.dcf_engine`** — `compute_wacc`, `terminal_ggm`,
   `terminal_exit_multiple`, `blend_terminal`, `discount_to_pv`,
   `equity_value`, and the sensitivity-grid helpers
-- **`MarketData`** — fetches current beta and 10Y UST rate
+- **`MarketData`** — current beta and the live quote; construct it with
+  `MarketData.default()` (the bare `MarketData()` constructor is a no-op — it
+  has no clients wired up and silently returns empty data)
+- **`tools.fred.FredClient`** — the 10Y UST (`DGS10`); construct it with
+  `FredClient(api_key=FRED_API_KEY, cache_dir=CACHE_DIR)`, importing
+  `FRED_API_KEY` and `CACHE_DIR` from `tools.settings` (there is no default
+  constructor)
 
 ## Workflow
 
@@ -106,13 +112,16 @@ as data.
 
 4. **Apply haircut** — compute:
    ```python
-   effective_exit_multiple = min(peer_median_ev_ebitda, peer_p75_ev_ebitda * 0.85)
+   effective_exit_multiple = min(peer_median_ev_ebitda * 0.85, peer_p75_ev_ebitda)
    ```
-   Log whether the p75 cap triggered.
+   The 0.85 mid-cycle haircut applies to the **peer median**; the **p75** is a
+   hard cap. This matches `tools.dcf_engine.terminal_exit_multiple` exactly —
+   the skill formula and the engine must stay in agreement. Log whether the p75
+   cap triggered.
 
 5. **Compute WACC inputs manually** — do NOT use FMP's `key-metrics` endpoints for any of these:
-   - **Beta**: pull from `MarketData.get_profile(ticker).beta` (FMP profile beta is acceptable since it's a raw market-derived number, not a ratio). Cross-check against a 2-year regression vs. SPY if available.
-   - **Risk-free rate**: 10Y UST from FRED (`DGS10`).
+   - **Beta**: pull from `MarketData.default().get_profile(ticker).beta` (FMP profile beta is acceptable since it's a raw market-derived number, not a ratio). It is fetched **live every run** — do not freeze or carry it from a prior run. Cross-check against a 2-year regression vs. SPY if available.
+   - **Risk-free rate**: 10Y UST (`DGS10`) from FRED — construct the `FredClient` as shown in the Tools list above.
    - **ERP**: 5.5% default (or whatever the ASSUMPTIONS_PROMPT recommends).
    - **Cost of debt**: TTM interest expense (sum of last 4 quarters from `income-statement-quarterly`) ÷ average total debt (most-recent + prior-year balance-sheet `longTermDebt + shortTermDebt`). Do NOT use `key-metrics.interestCoverage` or any FMP-computed cost-of-debt field.
    - **Tax rate**: 5-year average effective rate from raw `income-statement` (tax_expense / pre_tax_income), capped at 21%, excluding loss years. Manually computed.
