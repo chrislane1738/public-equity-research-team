@@ -10,13 +10,14 @@ Given a ticker (and optionally a workflow type), orchestrate the research desk
 to produce a single self-contained `report.html` plus companion .docx / .pptx /
 .xlsx artifacts under `~/Desktop/Agentic_Equity_Reports/<TICKER>/`.
 
-## Available skills (in `.claude/skills/`) — 13 skills
+## Available skills (in `.claude/skills/`) — 14 skills
 
 | Skill | Role | Loaded as |
 |---|---|---|
 | `accountant` | SEC filings + FMP reconciliation + red-flag audit + earnings deck download | Subagent |
 | `fundamentals` | Three statements + 10-K + bespoke KPIs | Subagent |
 | `industry-moat` | Porter's 5 forces, moat verdict, peer-share dynamics | Subagent |
+| `model` | Linked 5-yr 3-statement model + Bull/Base/Bear scenario analysis | Subagent |
 | `dcf` | Wrapper around `financial-analysis:dcf-model` with Plan B framing | Subagent |
 | `comps` | 3-tier peer assembly + `financial-analysis:comps-analysis` | Subagent |
 | `macro` | Rates / FX / catalyst calendar via FRED | Subagent |
@@ -53,6 +54,9 @@ first and sequentially (all other agents wait for it to complete); once it
 returns, use parallel dispatch for Stage 3 research pods (5 concurrent) and
 Stage 7 production (2 concurrent).
 
+The `model` skill runs sequentially in two places — phase build after the 5
+Stage-3 pods complete (before the DCF), and phase scenarios after md-synthesis.
+
 ## Data sources
 
 - **FMP** (primary) + **yfinance** (fallback) via `tools.marketdata.MarketData`
@@ -68,7 +72,7 @@ Every ticker's artifacts land under `~/Desktop/Agentic_Equity_Reports/<TICKER>/`
 
 ```
 <TICKER>/
-├── fundamentals/   industry/   dcf/   comps/   macro/   risk/   technicals/
+├── fundamentals/   industry/   model/   dcf/   comps/   macro/   risk/   technicals/
 ├── synthesis/_synthesis.md
 ├── reports/{memo.docx, pitch.pptx, onepager.pdf}
 └── report.html     <-- the canonical deliverable

@@ -20,6 +20,7 @@ SECTION_ORDER = [
     ("synthesis", "Executive Summary", "_synthesis.md"),
     ("fundamentals", "Fundamentals", "section.md"),
     ("industry", "Industry & Moat", "section.md"),
+    ("model", "Three-Statement Model", "section.md"),
     ("dcf", "DCF Valuation", "section.md"),
     ("comps", "Trading Comps", "section.md"),
     ("macro", "Macro & Catalysts", "section.md"),
@@ -35,6 +36,7 @@ COMPANION_LINKS = [
     ("reports/{ticker} memo.docx", "Memo (.docx)"),
     ("reports/{ticker} pitch.pptx", "Pitch Deck (.pptx)"),
     ("reports/{ticker} onepager.pdf", "One-Pager (.pdf)"),
+    ("model/{ticker} model.xlsx", "3-Statement Model (.xlsx)"),
     ("dcf/{ticker} dcf.xlsx", "DCF Model (.xlsx)"),
     ("comps/{ticker} comps.xlsx", "Comps Model (.xlsx)"),
 ]
@@ -341,6 +343,10 @@ def write_report_html(ticker_dir: Path, ticker: str) -> Path:
     for pod, heading, filename in SECTION_ORDER:
         section_path = ticker_dir / pod / filename
         html = render_section(section_path)
+        if pod == "model":
+            scen_path = ticker_dir / "model" / "scenarios.md"
+            if scen_path.exists():
+                html += render_section(scen_path)
         html = _strip_first_h1(html)
         html = _inline_images(html, ticker_dir / pod)
         html = _wrap_figures(html)

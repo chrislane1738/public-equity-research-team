@@ -5,7 +5,7 @@ argument-hint: <TICKER>
 
 Run a deep-dive on `$1`. This pipeline has **two mandatory pause points** where the orchestrator (you) stops and prompts the user before continuing. The pauses exist so we never dispatch the 5 research pods on bad data or bad comps.
 
-> **Note:** the accountant runs first as the ground-truth step; the user reviews its findings + provides a peer list; only then do the research agents fire.
+> **Note:** the accountant runs first as the ground-truth step; the user reviews its findings + provides a peer list; only then do the research agents fire. The `model` skill runs twice — phase build after the 5 pods (feeding the DCF), and phase scenarios after the synthesis.
 
 ## Pipeline
 
@@ -27,11 +27,29 @@ Run a deep-dive on `$1`. This pipeline has **two mandatory pause points** where 
 
 6. **Dispatch the 5 research pods in parallel** (single message, multiple Agent tool calls): `industry-moat`, `comps`, `macro`, `risk-upside`, `technicals`. Pass the user-supplied peer list to `comps` explicitly. Pass any Checkpoint-A resolutions to `risk-upside` so red flags are referenced in its bull/bear case.
 
-7. **Dispatch `dcf`** as a subagent once `comps/peer-multiples.json` exists on disk. DCF reads canonical TTM + live_quote from `fundamentals/financials.json`.
+7. **Dispatch `model` (phase: build) as a subagent.** Once all 5 research pods
+   have returned, dispatch the `model` skill with `phase: build`. It reads
+   `fundamentals/financials.json`, `accountant/reconciliation.json`, and
+   `industry/section.md`, builds the linked three-statement model on the Base
+   case, and writes `model/<TICKER> model.xlsx`, `model/projection.json`, and
+   `model/section.md`. Pass any Checkpoint-A reconciliation overrides. Wait for
+   it to return.
 
-8. **Invoke `md-synthesis` skill in-context (not a subagent).** Read all section.md files (canonical order: accountant, fundamentals, industry, dcf, comps, macro, risk, technicals) plus `_synthesis.md` inputs. Write `synthesis/_synthesis.md`. The synthesis surfaces any High-severity red flags in the executive summary.
+8. **Dispatch `dcf`** as a subagent once `model/projection.json` and
+   `comps/peer-multiples.json` both exist on disk. DCF reads the base-case
+   unlevered-FCF path from `model/projection.json` (it no longer self-projects)
+   and the peer multiples from `comps/peer-multiples.json`.
 
-9. **PAUSE CHECKPOINT C — which deliverables?** Synthesis is complete. Before dispatching the production agents, ask the user which deliverables to produce:
+9. **Invoke `md-synthesis` skill in-context (not a subagent).** Read all section.md files (canonical order: accountant, fundamentals, industry, dcf, comps, macro, risk, technicals) plus `_synthesis.md` inputs. Write `synthesis/_synthesis.md`. The synthesis surfaces any High-severity red flags in the executive summary.
+
+10. **Dispatch `model` (phase: scenarios) as a subagent.** After the synthesis
+    is written, dispatch the `model` skill with `phase: scenarios`. It reads
+    `synthesis/_synthesis.md`, `risk/section.md`, and `macro/section.md`,
+    quantifies the top 3-5 catalyst events into the Bull/Bear columns of
+    `model/<TICKER> model.xlsx`, and writes `model/scenarios.md`. Wait for it
+    to return before Checkpoint C.
+
+11. **PAUSE CHECKPOINT C — which deliverables?** Synthesis is complete. Before dispatching the production agents, ask the user which deliverables to produce:
 
    > *"Synthesis complete (rating: <X>, PT: <Y>). Which deliverables would you like?*
    > *— memo (.docx, ~50K tokens)*
@@ -42,15 +60,15 @@ Run a deep-dive on `$1`. This pipeline has **two mandatory pause points** where 
 
    Parse the user's response into a set of {memo, deck, html}. Default if response is ambiguous: ask for clarification, do not guess. Wait for explicit confirmation.
 
-10. **Dispatch the selected production agents.** Based on Checkpoint C:
+12. **Dispatch the selected production agents.** Based on Checkpoint C:
     - If memo + deck both selected: dispatch `memo-builder` and `deck-builder` as two parallel subagents (one Agent message).
     - If only memo: single `memo-builder` dispatch.
     - If only deck: single `deck-builder` dispatch.
     - If neither memo nor deck: skip this step entirely.
 
-11. **If html was selected:** invoke `synthesize-html` skill in-context. Assemble `<TICKER>/report.html`. The HTML auto-includes whichever companion files (memo.docx, pitch.pptx) actually exist — missing companions are silently skipped.
+13. **If html was selected:** invoke `synthesize-html` skill in-context. Assemble `<TICKER>/report.html`. The HTML auto-includes whichever companion files (memo.docx, pitch.pptx) actually exist — missing companions are silently skipped.
 
-12. Report the final paths to the user (only the artifacts you actually produced; do not list synthesis if it was already on disk pre-checkpoint).
+14. Report the final paths to the user (only the artifacts you actually produced; do not list synthesis if it was already on disk pre-checkpoint).
 
 ## Failure handling
 
