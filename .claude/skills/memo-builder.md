@@ -77,6 +77,7 @@ Dispatch `equity-research:earnings-analysis` via the Skill tool. Pass:
 - All `<pod>/section.md` files as context.
 - `synthesis/_synthesis.md` as the primary synthesis input.
 - If `accountant/section.md` exists, include it as supplemental context and reference any earnings-deck KPIs extracted by the accountant's lightweight earnings variant.
+- `model/section.md` and `model/scenarios.md` — the three-statement model and scenario analysis.
 
 The off-the-shelf skill handles citation discipline and earnings-note formatting.
 Output is written to `reports/<TICKER> memo.docx`.
@@ -94,6 +95,7 @@ Output is written to `reports/<TICKER> memo.docx`.
    - `industry-moat/section.md`
    - `macro/section.md`
    - `dcf/section.md`
+   - `model/section.md` and `model/scenarios.md` (the three-statement model and the Bull/Base/Bear scenario analysis)
    - `comps/section.md`
    - `risk-upside/section.md`
    - `technicals/section.md`
